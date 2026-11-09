@@ -89,20 +89,21 @@ describe("diff guard", () => {
 describe("parseRawDiff", () => {
   it("parses adds, modifies, deletes, renames and odd file names", () => {
     const z = "0".repeat(40);
+    const n = "a".repeat(40);
     const raw = [
-      `:000000 100644 ${z} ${z} A`, "new file.txt",
-      `:100644 100644 ${z} ${z} M`, "src/a.ts",
-      `:100644 000000 ${z} ${z} D`, "gone\nwith newline",
-      `:100644 100644 ${z} ${z} R087`, "old.md", "new.md",
-      `:000000 160000 ${z} ${z} A`, "sub",
+      `:000000 100644 ${z} ${n} A`, "new file.txt",
+      `:100644 100644 ${z} ${n} M`, "src/a.ts",
+      `:100644 000000 ${n} ${z} D`, "gone\nwith newline",
+      `:100644 100644 ${z} ${n} R087`, "old.md", "new.md",
+      `:000000 160000 ${z} ${n} A`, "sub",
       "",
     ].join("\0");
     assert.deepEqual(parseRawDiff(raw), [
-      { status: "A", path: "new file.txt", mode: "100644" },
-      { status: "M", path: "src/a.ts", mode: "100644" },
-      { status: "D", path: "gone\nwith newline", mode: "000000" },
-      { status: "R", oldPath: "old.md", path: "new.md", mode: "100644" },
-      { status: "A", path: "sub", mode: "160000" },
+      { status: "A", path: "new file.txt", mode: "100644", blob: n },
+      { status: "M", path: "src/a.ts", mode: "100644", blob: n },
+      { status: "D", path: "gone\nwith newline", mode: "000000", blob: z },
+      { status: "R", oldPath: "old.md", path: "new.md", mode: "100644", blob: n },
+      { status: "A", path: "sub", mode: "160000", blob: n },
     ]);
   });
 

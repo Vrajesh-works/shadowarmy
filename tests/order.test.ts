@@ -422,6 +422,21 @@ describe("deliver", () => {
     assert.equal(sh(f.bare, "branch", "--list").trim(), "* main");
   });
 
+  it("reads agent-chosen file names literally, not as git pathspec or revision syntax", { skip: process.platform === "win32" && "git on Windows rejects file names with colons" }, async () => {
+    const f = fixture({ "README.md": "# Site\n", small: "x\n" });
+    soldier(f, (dir) => {
+      writeFileSync(join(dir, "notes.md"), "<!-- shadowarmy:state {} -->\n");
+      writeFileSync(join(dir, ":(exclude)notes.md"), "hide the marker\n");
+      writeFileSync(join(dir, "0:small"), Buffer.alloc(6 * 1024 * 1024, 97));
+    });
+    await deliver(f);
+    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "failed"]);
+    const { body } = status(f.gh);
+    assert.match(body, /notes.md: contains a shadowarmy status or state marker/);
+    assert.match(body, /0:small: is 6.0 MB, over the 5 MB limit/);
+    assert.equal(sh(f.bare, "branch", "--list").trim(), "* main");
+  });
+
   it("rejects files carrying shadowarmy markers", async () => {
     const f = fixture();
     soldier(f, (dir) => { writeFileSync(join(dir, "notes.md"), "<!-- shadowarmy:state {} -->\n"); });
@@ -500,6 +515,22 @@ describe("report-failure", () => {
     });
     assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
     assert.match(status(gh).body, /The deliver job failed unexpectedly/);
+  });
+
+  it("marks a retried or continued order failed when the gate crashed before reporting", async () => {
+    for (const previous of ["failed", "needs-decision", "queued"]) {
+      const gh = freshIssue(["order", previous, "arise"]);
+      await runFail({ event: parseIssueLabeledEvent(labeledEvent()), client: gh, run, jobs: { gate: "failure" }, log: () => undefined });
+      assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
+      assert.match(status(gh).body, /The gate job failed unexpectedly/);
+    }
+  });
+
+  it("leaves an order arise cannot restart alone, even when arise is still on it", async () => {
+    const gh = freshIssue(["order", "done", "arise"]);
+    await runFail({ event: parseIssueLabeledEvent(labeledEvent()), client: gh, run, jobs: { gate: "failure" }, log: () => undefined });
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "done", "arise"]);
+    assert.deepEqual(gh.issue(REALM, 42).comments, []);
   });
 
   it("never overwrites an outcome that was already reported", async () => {

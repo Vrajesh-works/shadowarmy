@@ -10,6 +10,8 @@ export interface ChangedFile {
   oldPath?: string;
   /** git mode of the new file, for example 100644; 160000 is a submodule. */
   mode?: string;
+  /** Object id of the new content (from `--raw --no-abbrev`); all zeros for deletions. */
+  blob?: string;
   /** Size in bytes of the new content; absent for deletions. */
   size?: number;
   /** True when the new content contains a shadowarmy marker (`<!-- shadowarmy:`). */
@@ -100,17 +102,17 @@ export function parseRawDiff(raw: string): ChangedFile[] {
   while (index < fields.length) {
     const header = fields[index++] ?? "";
     if (header === "") continue;
-    const match = /^:(\d{6}) (\d{6}) [0-9a-f]+ [0-9a-f]+ ([AMDRCTUX])\d*$/.exec(header);
+    const match = /^:(\d{6}) (\d{6}) [0-9a-f]+ ([0-9a-f]+) ([AMDRCTUX])\d*$/.exec(header);
     if (match === null) throw new Error(`unexpected git diff --raw record: ${JSON.stringify(header.slice(0, 100))}`);
-    const [, , newMode = "", letter = ""] = match;
+    const [, , newMode = "", blob = "", letter = ""] = match;
     if (letter === "U" || letter === "X") throw new Error(`unexpected git diff status ${letter}`);
     const status = letter as ChangedFile["status"];
     const first = fields[index++] ?? "";
     if (status === "R" || status === "C") {
       const second = fields[index++] ?? "";
-      files.push({ status, oldPath: first, path: second, mode: newMode });
+      files.push({ status, oldPath: first, path: second, mode: newMode, blob });
     } else {
-      files.push({ status, path: first, mode: newMode });
+      files.push({ status, path: first, mode: newMode, blob });
     }
   }
   return files;

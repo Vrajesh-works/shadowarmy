@@ -158,7 +158,7 @@ Agreed November 8, 2026.
 
 ## 11. Failure, Retry And Recovery
 
-Agreed November 8, 2026. Milestone 1 implements failure reporting: every refused or failed step moves the order to `failed` with the step, the reason and the run link, and a `report-failure` job marks a still-running order `failed` if a job crashed before reporting (end to end: pending). `/retry`, stuck detection and automatic retries arrive in milestone 3.
+Agreed November 8, 2026. Milestone 1 implements failure reporting: every refused or failed step moves the order to `failed` with the step, the reason and the run link, and a `report-failure` job marks an order `failed` if a job crashed before reporting while it was still running (`in-progress`, or still carrying an `arise` the gate could act on, including a retry of a `failed`, `queued` or `needs-decision` order) (end to end: pending). `/retry`, stuck detection and automatic retries arrive in milestone 3.
 
 - Any step failure moves the task to `failed` with the step name, a short reason and the run link. Agent output that does not parse is a failure, not a guess.
 - `/retry` restarts from the last safe point recorded in the state block: if a branch and pull request exist, it starts a fix round with the previous failure as input; otherwise it starts a fresh Soldier run.

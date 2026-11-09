@@ -183,7 +183,7 @@ async function deliverChange(
   const token = input.githubToken;
   const serverUrl = input.run.serverUrl;
   const run = (args: string[], options: { auth?: boolean; env?: Record<string, string> } = {}) =>
-    git(args, { cwd: dir, serverUrl, ...(options.auth === true ? { token } : {}), ...(options.env ? { env: options.env } : {}) });
+    git(args, { cwd: dir, serverUrl, ...(options.auth === true ? { token } : {}), env: { GIT_LITERAL_PATHSPECS: "1", ...options.env } });
 
   try {
     await run(["init", "--quiet"]);
@@ -209,7 +209,7 @@ async function deliverChange(
   }
   for (const file of files) {
     if (file.status === "D" || file.mode === "160000") continue;
-    file.size = Number((await run(["cat-file", "-s", `:${file.path}`])).trim());
+    file.size = Number((await run(["cat-file", "-s", file.blob ?? ""])).trim());
     file.hasMarker = marked.has(file.path);
   }
 
