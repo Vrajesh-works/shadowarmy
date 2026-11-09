@@ -22,7 +22,8 @@ export function checkSoldierResult(text: string | null): ResultCheck {
   try {
     data = JSON.parse(text);
   } catch (error) {
-    return { ok: false, reason: `result.json is not valid JSON: ${(error as Error).message}` };
+    // Parser messages quote the input and can span lines; the status comment shows reasons line by line.
+    return { ok: false, reason: `result.json is not valid JSON: ${(error as Error).message.replace(/\s+/g, " ").trim()}` };
   }
   const checked = validate(data);
   if (!checked.ok) {

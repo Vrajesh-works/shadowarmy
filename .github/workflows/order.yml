@@ -103,6 +103,8 @@ jobs:
         run: |
           mkdir work
           tar -xzf "$RUNNER_TEMP/shadowarmy/in/target.tar.gz" -C work
+          # The Soldier reads every file in its inputs folder; the packed copy is not an input.
+          rm "$RUNNER_TEMP/shadowarmy/in/target.tar.gz"
       - name: Install Claude Code
         if: needs.gate.outputs.fake_agent == ''
         run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"

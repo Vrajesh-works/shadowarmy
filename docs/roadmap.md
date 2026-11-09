@@ -24,7 +24,13 @@ Goal: an order in a Realm becomes a pull request in a clean target repository.
 - Manual Realm setup documented (no CLI yet).
 - Spikes resolved and recorded in [decisions](decisions.md): Claude Code headless flags, credential option, engine checkout ref inside a reusable workflow.
 
-Status: implemented (spikes are decisions 20-22); done once the acceptance runs below are recorded on the sandbox Realm in the milestone's pull request.
+Status: done (spikes are decisions 20-22). Acceptance runs on the sandbox Realm (private; links work for its owner), November 9, 2026:
+
+- Monarch `arise` produces a pull request in a clean target with the requested change: [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42652430753), [pull request](https://github.com/Vrajesh-works/shadowarmy-sandbox-node/pull/2) (real Soldier; only `src/greet.js` and `test/greet.test.js` changed; target CI green).
+- `arise` from a second account does nothing: [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42658276654) (added by VNasit; the gate logged "not the Monarch" and changed nothing).
+- An impossible order ends in `failed` with a readable reason: [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42652908633) (real Soldier explained that the target has no checkout service).
+- An unrequested `CLAUDE.md` edit is rejected by the diff guard: [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42652193294) (fake agent scenario `edit-claude-md`; nothing pushed).
+- Also run: pipeline smoke test [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42651942297), and an injection-laden order with an unparsable result [run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42659729393).
 
 Acceptance:
 - Monarch adds `arise` to an order on the sandbox Realm; a pull request appears in the sandbox target with the requested change; the target repository contains no shadowarmy files.

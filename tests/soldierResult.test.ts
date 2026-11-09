@@ -24,6 +24,7 @@ describe("checkSoldierResult", () => {
   it("treats a missing, unparsable, oversized or off-schema result as a failure", () => {
     assert.match(reason(null), /did not write result.json/);
     assert.match(reason("not json"), /not valid JSON/);
+    assert.ok(!reason("this is not json\n").includes("\n"), "the reason is one line");
     assert.match(reason(" ".repeat(MAX_RESULT_BYTES + 1)), /larger than/);
     assert.match(reason(JSON.stringify({ ...result(), status: "success" })), /status: must be one of/);
     assert.match(reason(JSON.stringify({ ...result(), extra: 1 })), /extra: is not a known key/);
