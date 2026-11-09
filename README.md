@@ -4,7 +4,7 @@ One human. An army of AI agents that builds software on GitHub.
 
 shadowarmy turns one private GitHub repository, called **the Realm**, into an AI software team. You are the only human, **the Monarch**. You write an order as a GitHub issue ("in `you/blog`, add an RSS feed" or "new project: a CLI that converts CSV to JSON"), and the army plans it, builds it, reviews it and delivers it as a normal pull request in your project repository. Nothing merges without you.
 
-> **Status: early build.** These documents describe the agreed design. Only the foundation (configuration, issue form, label and status comment modules with tests) exists; nothing runs an order yet. See [the roadmap](docs/roadmap.md) for the build order and [the behavior contract](docs/behavior-contract.md) for the rules the implementation must follow.
+> **Status: early build.** A single-task order works: an Order issue labeled `arise` becomes a pull request written by one Soldier. The Knight review, commands, Sentinel, Marshal, setup CLI and Scout are not built yet. Set up a Realm by hand with [Realm setup](docs/realm-setup.md). See [the roadmap](docs/roadmap.md) for the build order and what comes next, and [the behavior contract](docs/behavior-contract.md) for the rules the implementation must follow.
 
 ## Why it exists
 
@@ -69,6 +69,7 @@ npx shadowarmy init          # create your private Realm, labels and secrets
 | [Behavior contract](docs/behavior-contract.md) | The agreed rules the implementation must follow |
 | [Roles](docs/roles.md) | Each agent's inputs, outputs, permissions and failure handling |
 | [Configuration](docs/configuration.md) | `shadowarmy.yml`, secrets, labels and issue forms |
+| [Realm setup](docs/realm-setup.md) | Setting up a Realm by hand until `init` exists |
 | [Security](docs/security.md) | Threat model and required safeguards |
 | [Roadmap](docs/roadmap.md) | Milestones with acceptance criteria |
 | [Decisions](docs/decisions.md) | Dated decision log |

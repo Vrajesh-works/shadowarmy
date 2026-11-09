@@ -1,6 +1,6 @@
 # Set Up A Realm
 
-Milestone 5 (`init` CLI). In milestone 1 the same steps are done by hand following DEVELOPMENT.md.
+Milestone 5 (`init` CLI). Until then the same steps are done by hand following [Realm setup](../../docs/realm-setup.md).
 
 ```mermaid
 sequenceDiagram

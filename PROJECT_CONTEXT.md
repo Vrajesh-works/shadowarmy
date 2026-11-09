@@ -17,7 +17,7 @@ Maintenance note: whenever the architecture, an order's lifecycle, a label, a co
 
 ## Current Context Summary
 
-shadowarmy is in early build (November 8, 2026). Milestone 0 is in place: a Node 22 TypeScript project with the `shadowarmy.yml` schema, the issue form parser, the label transition table and writer, the status comment renderer and parser, unit tests and engine CI. No workflow runs an order yet. The agreed design:
+shadowarmy is in early build (November 9, 2026). Milestones 0 and 1 are in place: the foundation modules, engine CI, and the single-task order workflow, where an Order issue labeled `arise` becomes a pull request by one Soldier, with a diff guard and honest failure reporting. The Knight, commands, Sentinel, Marshal, CLI and Scout are not built yet. The agreed design:
 
 - **Product:** an AI software team with exactly one human, the Monarch. The Monarch writes orders as GitHub issues; agents plan, implement, review and test the work and deliver it as pull requests in the Monarch's project repositories.
 - **Two kinds of repository:**
@@ -53,8 +53,7 @@ shadowarmy is in early build (November 8, 2026). Milestone 0 is in place: a Node
 These need a spike or a decision before or during the milestone that depends on them:
 
 - **Repository creation for new projects.** Confirm whether a fine-grained personal access token can create repositories on a personal account and with which permission. A GitHub App installation token cannot create repositories on a personal account. Fallback: the Monarch creates an empty repository and the order targets it. (Milestone 5.)
-- **Reusable workflow source.** Confirm how a called reusable workflow checks out the engine's scripts at the same version it was called with. Current plan: an `engine_ref` input that defaults to the pinned tag. (Milestone 1.)
-- **Claude credential terms.** Confirm that the chosen credential type is permitted for unattended CI use on the user's own repositories and document both options. (Milestone 1.)
+- Resolved in milestone 1: the reusable workflow checks out the engine via `job.workflow_repository` and `job.workflow_sha` (decision 22); both Claude credentials are supported, with the `claude setup-token` subscription token as default (decision 21).
 - **Scheduled workflow reliability.** GitHub may delay scheduled runs under load, and disables schedules in public repositories after 60 days without activity. The Sentinel must tolerate missed ticks. (Milestone 3.)
 - **Actions minutes.** Waiting for target CI inside a job spends minutes. Long waits must hand off to the Sentinel. (Milestone 2.)
 - **Parallel merge conflicts.** Parallel Soldiers on overlapping code create conflicts. The Marshal's task split and a rebase-and-retry path must keep this rare. (Milestone 4.)

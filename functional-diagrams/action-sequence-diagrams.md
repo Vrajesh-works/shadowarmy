@@ -2,7 +2,7 @@
 
 Maintenance note: whenever a supported action changes, update its diagram in `actions/` in the same change.
 
-Status: agreed design, November 8, 2026. Not implemented. The milestone that introduces each action is in brackets.
+Status: agreed design, November 8, 2026. Implemented: the single-task order and the manual Realm setup (milestone 1). The milestone that introduces each action is in brackets.
 
 - [Set up a Realm](actions/setup-realm.md) [M1 manual, M5 CLI]
 - [Single-task order](actions/single-task-order.md) [M1]

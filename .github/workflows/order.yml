@@ -1,0 +1,244 @@
+name: shadowarmy order
+
+# Reusable workflow called by a Realm's order.yml when a Realm issue is labeled.
+# The jobs keep the GitHub write token away from the agent:
+#   gate     - Realm token + SHADOWARMY_GH_TOKEN (Gate step only): actor check,
+#              config, order form, limits, inputs; fetches the target and packs
+#              it into the Soldier inputs, and records the base commit.
+#   soldier  - Claude credential only; never receives SHADOWARMY_GH_TOKEN.
+#              Unpacks the target and runs the agent. Everything it produces
+#              is treated as untrusted.
+#   deliver  - Realm token + SHADOWARMY_GH_TOKEN: validates the result on a fresh
+#              runner, applies the patch, diff guard, push, pull request, labels.
+#   report-failure - marks the order failed if a job crashed before reporting.
+# Untrusted event data never appears in run: scripts; scripts read the event
+# payload file or step-level env values.
+
+on:
+  workflow_call:
+    secrets:
+      SHADOWARMY_GH_TOKEN:
+        required: false
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+
+permissions: {}
+
+env:
+  CLAUDE_CODE_VERSION: 2.1.319
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    outputs:
+      authorized: ${{ steps.gate.outputs.authorized }}
+      proceed: ${{ steps.gate.outputs.proceed }}
+      target: ${{ steps.gate.outputs.target }}
+      base_ref: ${{ steps.gate.outputs.base_ref }}
+      base_sha: ${{ steps.gate.outputs.base_sha }}
+      model: ${{ steps.gate.outputs.model }}
+      max_turns: ${{ steps.gate.outputs.max_turns }}
+      timeout_minutes: ${{ steps.gate.outputs.timeout_minutes }}
+      fake_agent: ${{ steps.gate.outputs.fake_agent }}
+    steps:
+      - name: Check out engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: engine
+          persist-credentials: false
+      - name: Check out Realm
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: realm
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: engine/.nvmrc
+      - name: Install engine
+        working-directory: engine
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SHADOWARMY_ENGINE_DIR: ${{ github.workspace }}/engine
+          SHADOWARMY_REALM_DIR: ${{ github.workspace }}/realm
+          SHADOWARMY_INPUTS_DIR: ${{ runner.temp }}/shadowarmy/in
+          SHADOWARMY_FAKE_AGENT: ${{ vars.SHADOWARMY_FAKE_AGENT }}
+          HAS_CLAUDE_CREDENTIAL: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          SHADOWARMY_GH_TOKEN: ${{ secrets.SHADOWARMY_GH_TOKEN }}
+        run: node engine/src/cli/order.ts gate
+      - name: Upload Soldier inputs
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soldier-input
+          path: ${{ runner.temp }}/shadowarmy/in
+          retention-days: 1
+
+  soldier:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(needs.gate.outputs.timeout_minutes) }}
+    # No GITHUB_TOKEN permissions at all: this job runs the agent.
+    permissions: {}
+    steps:
+      - name: Download Soldier inputs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: soldier-input
+          path: ${{ runner.temp }}/shadowarmy/in
+      - name: Unpack target
+        id: target
+        run: |
+          mkdir work
+          tar -xzf "$RUNNER_TEMP/shadowarmy/in/target.tar.gz" -C work
+          # The Soldier reads every file in its inputs folder; the packed copy is not an input.
+          rm "$RUNNER_TEMP/shadowarmy/in/target.tar.gz"
+      - name: Install Claude Code
+        if: needs.gate.outputs.fake_agent == ''
+        run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Run Soldier
+        id: agent
+        working-directory: work
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODEL: ${{ needs.gate.outputs.model }}
+          MAX_TURNS: ${{ needs.gate.outputs.max_turns }}
+          FAKE_AGENT: ${{ needs.gate.outputs.fake_agent }}
+        run: |
+          export SHADOWARMY_IN="$RUNNER_TEMP/shadowarmy/in"
+          export SHADOWARMY_OUT="$RUNNER_TEMP/shadowarmy/out"
+          mkdir -p "$SHADOWARMY_OUT"
+          if [ -n "$FAKE_AGENT" ]; then
+            unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+            bash "$SHADOWARMY_IN/fake-agent.sh" "$FAKE_AGENT"
+            exit 0
+          fi
+          if [ -z "$ANTHROPIC_API_KEY" ]; then unset ANTHROPIC_API_KEY; fi
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then unset CLAUDE_CODE_OAUTH_TOKEN; fi
+          claude --safe-mode -p "$(cat "$SHADOWARMY_IN/prompt.md")" \
+            --model "$MODEL" \
+            --max-turns "$MAX_TURNS" \
+            --output-format json \
+            --dangerously-skip-permissions \
+            --no-session-persistence \
+            > "$RUNNER_TEMP/shadowarmy/claude.json"
+      - name: Collect changes
+        if: always() && steps.target.outcome == 'success'
+        working-directory: work
+        env:
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+        run: |
+          out="$RUNNER_TEMP/shadowarmy/out"
+          mkdir -p "$out"
+          git add -A
+          git diff --cached --binary "$BASE_SHA" > "$out/changes.patch"
+      - name: Redact agent summary
+        if: always()
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          src="$RUNNER_TEMP/shadowarmy/claude.json"
+          [ -f "$src" ] || exit 0
+          node -e '
+            const fs = require("node:fs");
+            let text = fs.readFileSync(process.argv[1], "utf8");
+            for (const secret of [process.env.CLAUDE_CODE_OAUTH_TOKEN, process.env.ANTHROPIC_API_KEY]) {
+              if (secret) text = text.split(secret).join("***");
+            }
+            fs.writeFileSync(process.argv[2], text);
+          ' "$src" "$RUNNER_TEMP/shadowarmy/out/claude.json"
+      - name: Upload Soldier output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soldier-output
+          path: ${{ runner.temp }}/shadowarmy/out
+          if-no-files-found: ignore
+          retention-days: 1
+
+  deliver:
+    needs: [gate, soldier]
+    if: ${{ !cancelled() && needs.gate.outputs.proceed == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: engine
+          persist-credentials: false
+      - name: Check out Realm
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: realm
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: engine/.nvmrc
+      - name: Install engine
+        working-directory: engine
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Download Soldier output
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: soldier-output
+          path: ${{ runner.temp }}/shadowarmy/soldier
+      - name: Deliver
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SHADOWARMY_GH_TOKEN: ${{ secrets.SHADOWARMY_GH_TOKEN }}
+          SHADOWARMY_REALM_DIR: ${{ github.workspace }}/realm
+          SHADOWARMY_SOLDIER_DIR: ${{ runner.temp }}/shadowarmy/soldier
+          SOLDIER_JOB_RESULT: ${{ needs.soldier.result }}
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+          BASE_REF: ${{ needs.gate.outputs.base_ref }}
+        run: node engine/src/cli/order.ts deliver
+
+  report-failure:
+    needs: [gate, soldier, deliver]
+    if: ${{ failure() && needs.gate.outputs.authorized == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Check out engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: engine/.nvmrc
+      - name: Install engine
+        working-directory: engine
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Report failure
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          SOLDIER_RESULT: ${{ needs.soldier.result }}
+          DELIVER_RESULT: ${{ needs.deliver.result }}
+        run: node engine/src/cli/order.ts fail

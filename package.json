@@ -14,7 +14,7 @@
     "test": "node --test \"tests/**/*.test.ts\"",
     "lint": "npm run lint:eslint && npm run lint:workflows && npm run lint:shell",
     "lint:eslint": "eslint .",
-    "lint:workflows": "actionlint && node scripts/check-workflow-expressions.ts",
+    "lint:workflows": "actionlint .github/workflows/*.yml template/.github/workflows/*.yml && node scripts/check-workflow-expressions.ts",
     "lint:shell": "bash scripts/lint-shell.sh"
   },
   "dependencies": {

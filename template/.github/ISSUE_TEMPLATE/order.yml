@@ -1,0 +1,26 @@
+name: Order
+description: Ask the army to make a change in one of your repositories. Add the arise label to start it.
+labels: [order]
+body:
+  - type: input
+    id: target
+    attributes:
+      label: Target repository
+      description: The repository to change, as owner/name. It must be allowed by targets in shadowarmy.yml.
+      placeholder: your-login/your-repo
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: Task
+      description: What to change, in plain language, and what done looks like.
+    validations:
+      required: true
+  - type: input
+    id: base
+    attributes:
+      label: Base branch
+      description: Optional. The branch to start from and open the pull request against. Defaults to the repository's default branch.
+    validations:
+      required: false

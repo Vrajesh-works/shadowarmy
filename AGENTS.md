@@ -33,11 +33,11 @@ These instructions apply to anyone, human or agent, building the shadowarmy engi
 
 ## Scope And Existing Code
 
-Milestone 0 (repository foundation) exists: config, issue form, label and status comment modules in `src/` with unit tests, and the engine CI. No workflow that runs an order exists yet. Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
+Milestones 0 and 1 exist: the foundation modules in `src/`, the engine CI, and the single-task order workflow (`.github/workflows/order.yml`, `src/order/`, `roles/soldier.md`, `template/`). Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
 
 | Work area | Guidance |
 | --- | --- |
-| Reusable workflows `.github/workflows/` (planned; `ci.yml` is the engine's own CI) | [Architecture](functional-diagrams/architecture.md), [behavior contract](docs/behavior-contract.md) |
+| Reusable workflows `.github/workflows/` (`order.yml`; `ci.yml` is the engine's own CI) | [Architecture](functional-diagrams/architecture.md), [behavior contract](docs/behavior-contract.md) |
 | Engine scripts `src/` (schemas in `src/schemas/`) | [Roles](docs/roles.md), [behavior contract](docs/behavior-contract.md) |
 | Dev scripts `scripts/` (lint helpers, not shipped) | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Role prompts `roles/` | [Roles](docs/roles.md) |
