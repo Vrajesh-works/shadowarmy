@@ -61,7 +61,7 @@ Rules for sandbox runs:
 | --- | --- | --- |
 | Unit | `node:test` with fixtures in `tests/fixtures/` | Config validation, issue form parsing, label transitions, state block, diff guard, limits, command parsing, report rendering |
 | Contract | JSON Schema tests with valid and invalid agent outputs | Every role output schema |
-| Workflow lint | actionlint, plus a check that no `run:` step contains `${{ github.event` | Script injection safety |
+| Workflow lint | actionlint, plus `scripts/check-workflow-expressions.ts`, which fails on any `${{ }}` expression inside a `run:` script ([decision 16](docs/decisions.md)) | Script injection safety |
 | End to end | Real runs on the sandbox Realm, recorded in the PR | Every acceptance criterion in [the roadmap](docs/roadmap.md) |
 
 Agents are not mocked in end-to-end tests. For unit tests of the orchestration around agents, a fake agent script writes canned output files, selected by an environment variable that only test workflows set.
