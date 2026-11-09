@@ -1,6 +1,7 @@
 // A small GitHub REST client on top of fetch. Engine scripts are the only code
 // that talks to GitHub; agents never do. Every request is bounded: a timeout
-// per attempt and a fixed number of retries for transient server errors.
+// per attempt and a fixed number of retries for transient server errors on
+// idempotent methods (never POST).
 
 export class GitHubError extends Error {
   override name = "GitHubError";
@@ -31,6 +32,7 @@ export interface ClientOptions {
 }
 
 const TRANSIENT = new Set([500, 502, 503, 504]);
+const IDEMPOTENT = new Set(["GET", "HEAD", "PUT", "PATCH", "DELETE"]);
 
 export function createClient(options: ClientOptions): GitHubClient {
   const apiUrl = (options.apiUrl ?? "https://api.github.com").replace(/\/+$/, "");
@@ -41,7 +43,8 @@ export function createClient(options: ClientOptions): GitHubClient {
 
   async function send(method: string, url: string, body: unknown): Promise<Response> {
     let lastError: unknown;
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    const attempts = IDEMPOTENT.has(method) ? retries : 0;
+    for (let attempt = 0; attempt <= attempts; attempt++) {
       if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1));
       try {
         const response = await doFetch(url, {
@@ -56,11 +59,11 @@ export function createClient(options: ClientOptions): GitHubClient {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           signal: AbortSignal.timeout(timeoutMs),
         });
-        if (!TRANSIENT.has(response.status) || attempt === retries) return response;
+        if (!TRANSIENT.has(response.status) || attempt === attempts) return response;
         lastError = new Error(`HTTP ${String(response.status)}`);
       } catch (error) {
         lastError = error;
-        if (attempt === retries) throw error;
+        if (attempt === attempts) throw error;
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));

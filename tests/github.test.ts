@@ -40,6 +40,13 @@ describe("GitHub client", () => {
     await assert.rejects(limited.request("GET", "/x"), /HTTP 500: boom/);
   });
 
+  it("sends a POST only once, even when GitHub answers with a transient error", async () => {
+    const { fn, seen } = fakeFetch([json(502, { message: "Bad Gateway" }), json(201, { id: 1 })]);
+    const client = createClient({ token: "t", fetch: fn, sleep: () => Promise.resolve() });
+    await assert.rejects(client.request("POST", "/repos/a/b/pulls", { title: "x" }), /HTTP 502/);
+    assert.equal(seen.length, 1);
+  });
+
   it("does not retry client errors and reports GitHub's message", async () => {
     const { fn, seen } = fakeFetch([json(404, { message: "Not Found" })]);
     const error = await createClient({ token: "t", fetch: fn }).request("GET", "/repos/a/b").catch((e: unknown) => e);
