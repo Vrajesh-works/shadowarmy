@@ -31,6 +31,7 @@ export function newState(target: string | null, base: string | null): StateBlock
     kind: "order",
     target,
     base,
+    baseSha: null,
     branch: null,
     pr: null,
     round: 0,

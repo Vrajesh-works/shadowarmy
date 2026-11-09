@@ -33,6 +33,8 @@ export interface StateBlock {
   target: string | null;
   /** Base branch; null means the target's default branch. */
   base: string | null;
+  /** The commit the first Soldier round started from; the Knight reviews the diff from here. Null until the target is fetched. */
+  baseSha: string | null;
   branch: string | null;
   pr: number | null;
   /** Fix rounds used. */
@@ -64,6 +66,7 @@ export const stateSchema: SchemaObject = {
     "kind",
     "target",
     "base",
+    "baseSha",
     "branch",
     "pr",
     "round",
@@ -78,6 +81,7 @@ export const stateSchema: SchemaObject = {
     kind: { type: "string", enum: ["order", "task", "new-project"] },
     target: { type: "string", format: "repo-full-name", description: "\"owner/name\"", nullable: true },
     base: { type: "string", format: "branch-name", description: "a valid branch name", nullable: true },
+    baseSha: { type: "string", pattern: "^[0-9a-f]{40}$", description: "a full commit SHA", nullable: true },
     branch: {
       type: "string",
       format: "task-branch",

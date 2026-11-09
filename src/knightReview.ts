@@ -1,0 +1,116 @@
+// Validates the Knight's review.json and turns it into a pull request review.
+// The posted review ends with a machine block, so a later run (a fix round)
+// can read the findings back from GitHub instead of from runner storage:
+//
+//   <!-- shadowarmy:review {"round":1,"review":{...}} -->
+//
+// Agent output is untrusted: anything that does not match the schema, or whose
+// verdict contradicts its findings, is a failure.
+
+import { compileUncheckedValidator, formatIssues } from "./schema.ts";
+import { reviewSchema, type Finding, type KnightReview } from "./schemas/review.ts";
+import { escapeText } from "./statusComment.ts";
+
+export type { Finding, KnightReview, Severity } from "./schemas/review.ts";
+
+export const MAX_REVIEW_BYTES = 256 * 1024;
+const BLOCK_PREFIX = "<!-- shadowarmy:review ";
+const BLOCK_SUFFIX = " -->";
+
+const validate = compileUncheckedValidator<KnightReview>(reviewSchema);
+
+export type ReviewCheck = { ok: true; review: KnightReview } | { ok: false; reason: string };
+
+/** Findings that require a fix round. */
+export function blocking(review: KnightReview): Finding[] {
+  return review.findings.filter((finding) => finding.severity !== "minor");
+}
+
+export function minor(review: KnightReview): Finding[] {
+  return review.findings.filter((finding) => finding.severity === "minor");
+}
+
+function validateData(data: unknown): ReviewCheck {
+  const checked = validate(data);
+  if (!checked.ok) {
+    return { ok: false, reason: `review.json does not match the schema: ${formatIssues(checked.issues).replaceAll("\n", "; ")}` };
+  }
+  const review = checked.value;
+  const required = blocking(review).length;
+  if (review.verdict === "approve" && required > 0) {
+    return { ok: false, reason: `review.json approves but lists ${String(required)} blocker or major finding(s)` };
+  }
+  if (review.verdict === "changes" && required === 0) {
+    return { ok: false, reason: "review.json requests changes but lists no blocker or major finding" };
+  }
+  return { ok: true, review };
+}
+
+export function checkKnightReview(text: string | null): ReviewCheck {
+  if (text === null) return { ok: false, reason: "the Knight did not write review.json" };
+  if (Buffer.byteLength(text, "utf8") > MAX_REVIEW_BYTES) {
+    return { ok: false, reason: `review.json is larger than ${String(MAX_REVIEW_BYTES / 1024)} KB` };
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    return { ok: false, reason: `review.json is not valid JSON: ${(error as Error).message.replace(/\s+/g, " ").trim()}` };
+  }
+  return validateData(data);
+}
+
+export function reviewSchemaText(): string {
+  return JSON.stringify(reviewSchema, null, 2);
+}
+
+function location(finding: Finding): string {
+  return finding.line === null ? finding.file : `${finding.file}:${String(finding.line)}`;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** One markdown bullet per finding, escaped. */
+export function renderFindings(findings: readonly Finding[]): string {
+  return findings
+    .map((finding) => {
+      const fix = finding.suggestedFix.trim() === "" ? "" : ` Suggested fix: ${escapeText(oneLine(finding.suggestedFix))}`;
+      return `- **${finding.severity}** <code>${escapeText(location(finding))}</code>: ${escapeText(oneLine(finding.problem))}${fix}`;
+    })
+    .join("\n");
+}
+
+/** The pull request review body: readable part, then the machine block. */
+export function renderReviewBody(review: KnightReview, round: number): string {
+  const verdict = review.verdict === "approve" ? "approved" : "changes requested";
+  const parts = [
+    `**shadowarmy Knight review, round ${String(round)}: ${verdict}.** ${escapeText(oneLine(review.summary))}`,
+  ];
+  if (review.scope.trim().toLowerCase() !== "ok") parts.push(`Scope: ${escapeText(oneLine(review.scope))}`);
+  if (review.findings.length > 0) parts.push(renderFindings(review.findings));
+  const json = JSON.stringify({ round, review }).replace(/[<>&]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  parts.push(`${BLOCK_PREFIX}${json}${BLOCK_SUFFIX}`);
+  return `${parts.join("\n\n")}\n`;
+}
+
+/** Read a review back from a posted review body; null when the body carries no valid block. */
+export function parseReviewBody(body: string): { round: number; review: KnightReview } | null {
+  const line = body
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((text) => text.trim())
+    .findLast((text) => text.startsWith(BLOCK_PREFIX) && text.endsWith(BLOCK_SUFFIX));
+  if (line === undefined) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(line.slice(BLOCK_PREFIX.length, -BLOCK_SUFFIX.length));
+  } catch {
+    return null;
+  }
+  const { round, review } = (data ?? {}) as { round?: unknown; review?: unknown };
+  if (typeof round !== "number" || !Number.isInteger(round) || round < 0) return null;
+  const checked = validateData(review);
+  return checked.ok ? { round, review: checked.review } : null;
+}

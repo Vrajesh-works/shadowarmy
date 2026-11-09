@@ -3,6 +3,7 @@
 // it is escaped so it cannot add HTML or @mention anyone, and the body stays
 // under GitHub's size limit.
 
+import { renderFindings, type Finding } from "./knightReview.ts";
 import type { SoldierResult } from "./soldierResult.ts";
 import { escapeText } from "./statusComment.ts";
 
@@ -17,7 +18,8 @@ export interface PullRequestContext {
   serverUrl?: string;
 }
 
-export function renderPullRequestBody(result: SoldierResult, context: PullRequestContext): string {
+/** `minorFindings`: the Knight's minor findings on the approved change, listed for the Monarch. */
+export function renderPullRequestBody(result: SoldierResult, context: PullRequestContext, minorFindings: readonly Finding[] = []): string {
   const sections: string[] = ["## Summary", escapeText(result.summary.trim())];
 
   sections.push("## Verification");
@@ -38,6 +40,11 @@ export function renderPullRequestBody(result: SoldierResult, context: PullReques
       ? "None reported."
       : result.limitations.map((limitation) => `- ${escapeText(oneLine(limitation))}`).join("\n"),
   );
+
+  if (minorFindings.length > 0) {
+    sections.push("## Minor review findings");
+    sections.push(`The Knight approved this change and noted these minor points:\n\n${renderFindings(minorFindings)}`);
+  }
 
   // `#N` would link to the target repository's own issue N, so the number is in a code span
   // unless the Realm issue is linked.

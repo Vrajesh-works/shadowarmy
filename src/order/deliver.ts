@@ -1,19 +1,22 @@
 // The `deliver` job of order.yml. Everything the soldier job produced is
 // untrusted (the agent could have changed any file on that runner), so this
 // job re-checks it all: it validates result.json, applies the patch to a fresh
-// checkout of the base commit, runs the diff guard, then commits, pushes the
-// task branch and opens or updates the pull request.
+// fetch of the round's start commit, runs the diff guard, then commits, pushes
+// the task branch, opens or updates the pull request, and prepares the
+// Knight's inputs (the packed branch and the full diff) for review.
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "../config.ts";
 import { checkDiff, MARKER, parseRawDiff, type ChangedFile } from "../diffGuard.ts";
-import type { IssueLabeledEvent } from "../event.ts";
+import type { OrderEvent } from "../event.ts";
 import { git, GitError } from "../git.ts";
 import { GitHubError, repoPath, type GitHubClient } from "../github.ts";
 import { parseOrderForm } from "../issueForm.ts";
 import { isTaskBranch, taskBranchName, isSafeBranchName } from "../names.ts";
+import { writeKnightInputs } from "../inputs.ts";
 import { renderCommitMessage, renderPullRequestBody } from "../prBody.ts";
+import { packDirectory, TARGET_ARCHIVE } from "../targetRepo.ts";
 import { RealmIssue } from "../realmIssue.ts";
 import { checkSoldierResult, type SoldierResult } from "../soldierResult.ts";
 import type { RunConclusion, StateBlock } from "../statusComment.ts";
@@ -23,7 +26,7 @@ import { configProblem, errorText, loadRealmConfig, newState, report, reportFail
 export const MAX_PATCH_BYTES = 200 * 1024 * 1024;
 
 export interface DeliverInput {
-  event: IssueLabeledEvent;
+  event: OrderEvent;
   realmClient: GitHubClient;
   targetClient: GitHubClient;
   githubToken: string;
@@ -32,9 +35,17 @@ export interface DeliverInput {
   soldierDir: string;
   /** needs.soldier.result: success, failure, cancelled or skipped. */
   soldierJob: string;
-  /** The base commit and branch the gate job fetched (trusted: no agent ran there). */
-  baseSha: string;
+  /** From the gate job (trusted: no agent ran there): the pull request's base branch, */
   baseRef: string;
+  /** the commit the first round started from, */
+  baseSha: string;
+  /** the commit this round's Soldier started from (baseSha in round 0, the branch head in fix rounds), */
+  startSha: string;
+  /** and the fix round (0 for the first round). */
+  round: number;
+  engineDir: string;
+  /** Where to write the Knight's inputs. */
+  knightInputsDir: string;
   workDir: string;
   run: RunInfo;
   log: (line: string) => void;
@@ -74,7 +85,14 @@ export function explainMissingResult(soldierDir: string, soldierJob: string, con
   return "The Soldier did not write result.json.";
 }
 
-export async function runDeliver(input: DeliverInput): Promise<void> {
+/** Whether the change was pushed and the Knight's inputs are ready. */
+export interface DeliverOutput {
+  knight: boolean;
+}
+
+const NO_KNIGHT: DeliverOutput = { knight: false };
+
+export async function runDeliver(input: DeliverInput): Promise<DeliverOutput> {
   const { event, run } = input;
   const [owner = "", repo = ""] = event.repository.fullName.split("/");
   const issue = new RealmIssue(input.realmClient, event.repository.fullName, event.issue.number);
@@ -84,7 +102,7 @@ export async function runDeliver(input: DeliverInput): Promise<void> {
     state = (await issue.readState()) ?? state;
   } catch (error) {
     await reportFailure(issue, run, state, "read status", (error as Error).message);
-    return;
+    return NO_KNIGHT;
   }
   state = { ...state, runs: [...state.runs, { role: "soldier" as const, runId: run.runId, conclusion: conclusionOf(input.soldierJob) }].slice(-200) };
 
@@ -122,36 +140,49 @@ export async function runDeliver(input: DeliverInput): Promise<void> {
         },
         state,
       );
-      return;
+      return NO_KNIGHT;
     }
 
-    if (!isSafeBranchName(input.baseRef) || !/^[0-9a-f]{40}$/.test(input.baseSha)) {
+    const sha = /^[0-9a-f]{40}$/;
+    if (!isSafeBranchName(input.baseRef) || !sha.test(input.baseSha) || !sha.test(input.startSha)) {
       throw new StepFailure("check out target", "The gate job did not record the base commit.");
     }
     const branch = state.branch ?? taskBranchName(event.issue.number, event.issue.title);
     if (!isTaskBranch(branch)) throw new StepFailure("push", `Refusing to push to "${branch}": not a shadowarmy/* task branch.`);
 
     const delivered = await deliverChange(input, cfg, order.target, order.task, result, branch);
-    state = { ...state, branch, pr: delivered.number, lastError: null };
+    state = { ...state, branch, pr: delivered.number, base: input.baseRef, baseSha: input.baseSha, lastError: null };
+
+    writeKnightInputs({
+      engineDir: input.engineDir,
+      realmDir: input.realmDir,
+      outDir: input.knightInputsDir,
+      issue: { number: event.issue.number, title: event.issue.title },
+      target: order.target,
+      base: input.baseRef,
+      task: order.task,
+      answers: [],
+      round: input.round,
+      diff: delivered.diff,
+      soldierResult: JSON.stringify(result, null, 2),
+    });
+    await packDirectory(delivered.dir, join(input.knightInputsDir, TARGET_ARCHIVE));
+
     await report(
       issue,
-      "ready-to-merge",
+      "in-review",
       {
-        summary: `Pull request #${String(delivered.number)} in ${order.target} is ready for your review.`,
-        details: [
-          result.title,
-          "Not reviewed by a Knight yet (milestone 2). Review the change yourself before merging.",
-          ...delivered.notes,
-          ...injection,
-        ],
+        summary: `A Knight is reviewing pull request #${String(delivered.number)} in ${order.target}${input.round === 0 ? "" : ` after fix round ${String(input.round)}`}.`,
+        details: [result.title, ...delivered.notes, ...injection],
         links: [{ label: `Pull request #${String(delivered.number)}`, url: delivered.url }, runLink(run)],
       },
       state,
     );
+    return { knight: true };
   } catch (error) {
     if (error instanceof StepFailure) {
       await reportFailure(issue, run, state, error.step, error.message);
-      return;
+      return NO_KNIGHT;
     }
     const message = error instanceof Error ? error.message : String(error);
     await reportFailure(issue, run, { ...state, lastError: errorText(message) }, "deliver", message);
@@ -163,6 +194,10 @@ interface Delivered {
   number: number;
   url: string;
   notes: string[];
+  /** The full diff of the branch against the first round's base commit, for the Knight. */
+  diff: string;
+  /** The local checkout of the pushed branch. */
+  dir: string;
 }
 
 async function deliverChange(
@@ -188,14 +223,14 @@ async function deliverChange(
   try {
     await run(["init", "--quiet"]);
     await run(["remote", "add", "origin", `${serverUrl}/${target}.git`]);
-    await run(["fetch", "--quiet", "--depth=1", "origin", input.baseSha], { auth: true });
-    await run(["checkout", "--quiet", "-b", branch, input.baseSha]);
+    await run(["fetch", "--quiet", "--depth=1", "origin", input.startSha], { auth: true });
+    await run(["checkout", "--quiet", "-b", branch, input.startSha]);
     await run(["apply", "--index", "--binary", "--whitespace=nowarn", patchPath]);
   } catch (error) {
     throw new StepFailure("apply change", error instanceof GitError ? error.message : String(error));
   }
 
-  const files: ChangedFile[] = parseRawDiff(await run(["diff", "--cached", "--raw", "-z", "-M", "--no-abbrev", input.baseSha]));
+  const files: ChangedFile[] = parseRawDiff(await run(["diff", "--cached", "--raw", "-z", "-M", "--no-abbrev", input.startSha]));
   if (files.length === 0) throw new StepFailure("apply change", "The Soldier reported done but produced no changes.");
   const present = files.filter((file) => file.status !== "D").map((file) => file.path);
   const marked = new Set<string>();
@@ -231,10 +266,15 @@ async function deliverChange(
     env: { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email },
   });
 
-  // Push only the task branch. A leftover branch from an earlier attempt of this
-  // same order is replaced, but only if it still points where we last saw it.
-  const remote = (await run(["ls-remote", "--heads", "origin", `refs/heads/${branch}`], { auth: true })).trim();
-  const expected = remote === "" ? "" : (remote.split(/\s+/)[0] ?? "");
+  // Push only the task branch. In a fix round the push is a fast-forward of the
+  // head the Soldier started from. In the first round a leftover branch from an
+  // earlier attempt of this same order is replaced, but only if it still points
+  // where we last saw it.
+  let expected = input.startSha;
+  if (input.round === 0) {
+    const remote = (await run(["ls-remote", "--heads", "origin", `refs/heads/${branch}`], { auth: true })).trim();
+    expected = remote === "" ? "" : (remote.split(/\s+/)[0] ?? "");
+  }
   try {
     await run(["push", "--quiet", `--force-with-lease=refs/heads/${branch}:${expected}`, "origin", `HEAD:refs/heads/${branch}`], { auth: true });
   } catch (error) {
@@ -252,7 +292,12 @@ async function deliverChange(
     serverUrl,
   });
   const notes = guard.exceptions.length > 0 ? [`Allowed because the order names them: ${guard.exceptions.join(", ")}.`] : [];
-  return { ...(await openOrUpdatePullRequest(input.targetClient, target, branch, input.baseRef, result.title, body, cfg.pr.draft)), notes };
+  const pull = await openOrUpdatePullRequest(input.targetClient, target, branch, input.baseRef, result.title, body, cfg.pr.draft);
+
+  // The Knight reviews the whole change, not just this round's part.
+  if (input.baseSha !== input.startSha) await run(["fetch", "--quiet", "--depth=1", "origin", input.baseSha], { auth: true });
+  const diff = await run(["diff", "--binary", input.baseSha, "HEAD"]);
+  return { ...pull, notes, diff, dir };
 }
 
 async function openOrUpdatePullRequest(

@@ -81,39 +81,47 @@ Dispatch between workflows uses `workflow_dispatch` through the Realm's `GITHUB_
 
 ## Jobs Of `order.yml`
 
-Implemented in milestone 1 up to `ready-to-merge` without the Knight; the dashed edge leads to the steps that arrive in milestone 2. The agent runs in its own job, and that job is never sent the GitHub write token: the gate job fetches the target and hands the checkout over with the Soldier inputs ([decision 23](../docs/decisions.md)).
+Implemented in milestones 1 and 2. One run is one round. Agents run in their own jobs, which are never sent the GitHub write token: the gate job fetches the target and hands the checkout over with the Soldier's inputs, and the deliver job does the same for the Knight ([decisions 23 and 31](../docs/decisions.md)). A fix round is a new run dispatched by the judge ([decision 30](../docs/decisions.md)); see the [review and fix loop](actions/review-and-fix-loop.md).
 
 ```mermaid
 flowchart TB
   subgraph gate[gate job: Realm token + SHADOWARMY_GH_TOKEN in the Gate step]
-    A[Actor check, config, order form, target, secrets, daily cap] --> T[Fetch target base, pack checkout]
-    T --> C[Assemble input files]
+    A[Actor check, config, order form, target, secrets, daily cap on arise] --> T[Fetch base or task branch, pack checkout]
+    T --> C[Assemble inputs; fix round: feedback.md from the PR review and failing checks]
   end
   subgraph soldier[soldier job: Claude credential only, no GitHub token]
-    B[Unpack target checkout] --> D[Soldier agent step]
+    B[Unpack checkout] --> D[Soldier agent step]
     D --> P[Collect patch and result]
   end
   subgraph deliver[deliver job: Realm token + SHADOWARMY_GH_TOKEN]
     E{result.json valid?}
+    R[Fetch start commit, apply patch] --> H[Diff guard]
+    H -- ok --> I[Commit and push shadowarmy/* branch]
+    I --> J[Open or update PR, pack branch and full diff]
+  end
+  subgraph knight[knight job: Claude credential only, no GitHub token]
+    K[Knight agent step] --> Q[review.json]
+  end
+  subgraph judge[judge job: Realm token + SHADOWARMY_GH_TOKEN]
+    V{review.json valid?} -- yes --> W[Post PR review on head commit]
+    W --> L{verdict}
+    L -- approve --> M[Wait for target CI in job]
   end
   C -- artifact --> B
   P -- artifact, untrusted --> E
   E -- no --> F[failed]
   E -- blocked --> G[needs-decision]
-  E -- done --> R[Fetch base commit, apply patch]
-  R --> H[Diff guard]
+  E -- done --> R
   H -- reject --> F
-  H -- ok --> I[Commit and push shadowarmy/* branch]
-  I --> J[Open or update PR]
-  J -- milestone 1 --> O
-  J -.-> K[Knight agent step]
-  K --> L{verdict}
-  L -- changes and rounds left --> C
+  J -- artifact --> K
+  Q -- artifact, untrusted --> V
+  V -- no --> F
+  L -- changes and rounds left --> X[in-progress, round + 1, dispatch next run]
   L -- changes and no rounds --> G
-  L -- approve --> M[Wait for target CI in job]
-  M -- failing and rounds left --> C
-  M -- pending too long --> N[waiting-ci]
+  M -- failing and rounds left --> X
+  M -- failing and no rounds, or pending at the limit --> G
   M -- green or no CI --> O[ready-to-merge]
+  X -. next run .-> A
 ```
 
 ## Repository Layouts
@@ -123,14 +131,15 @@ Engine ("exists" marks what is built; everything else is planned):
 ```text
 shadowarmy/
   .github/workflows/      ci.yml, order.yml (exist); plan.yml, command.yml, sentinel.yml (reusable)
-  roles/                  soldier.md (exists); marshal.md, knight.md, scout.md
+  roles/                  soldier.md, knight.md (exist); marshal.md, scout.md
   scripts/                check-workflow-expressions.ts, lint-shell.sh (dev-only lint helpers), fake-agent.sh (test Realms) (exist)
   src/
-    cli/                  order.ts (exists: gate, deliver, fail); init, doctor, protect
-    order/                context.ts gate.ts deliver.ts fail.ts (exist)
-    schemas/              config.ts, state.ts, result.ts (exist); plan, review, scout
+    cli/                  order.ts (exists: gate, deliver, judge, fail); init, doctor, protect
+    order/                context.ts gate.ts deliver.ts judge.ts fail.ts (exist)
+    schemas/              config.ts, state.ts, result.ts, review.ts (exist); plan, scout
     config.ts issueForm.ts labels.ts statusComment.ts names.ts schema.ts (exist)
     github.ts git.ts realmIssue.ts event.ts inputs.ts diffGuard.ts limits.ts prBody.ts soldierResult.ts (exist)
+    knightReview.ts ci.ts feedback.ts targetRepo.ts (exist, milestone 2)
     sentinel.ts
   template/               Realm skeleton (exists: order caller, Order form, shadowarmy.yml, rules, projects, README)
   tests/                  unit tests, helpers and fixtures (exist)
@@ -172,6 +181,7 @@ State block (version 1):
   "kind": "task",
   "target": "owner/repo",
   "base": "main",
+  "baseSha": "3f1c2a9e8d7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a",
   "branch": "shadowarmy/42-rss-feed",
   "pr": 7,
   "round": 1,

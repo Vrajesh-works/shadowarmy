@@ -1,6 +1,6 @@
 # Single-Task Order
 
-Milestone 1, implemented in `.github/workflows/order.yml` and `src/order/` (without the Knight; the Knight is added in milestone 2, see [review and fix loop](review-and-fix-loop.md)). Each box on the runner side is a separate job on its own runner. The gate job fetches the target, so the soldier job, which runs the agent, is never sent the GitHub write token.
+Milestone 1, implemented in `.github/workflows/order.yml` and `src/order/`. This is round 0 up to the push; from milestone 2 the Knight reviews every push before anything reaches `ready-to-merge`, see [review and fix loop](review-and-fix-loop.md). Each box on the runner side is a separate job on its own runner. The gate job fetches the target, so the soldier job, which runs the agent, is never sent the GitHub write token.
 
 ```mermaid
 sequenceDiagram
@@ -49,7 +49,7 @@ sequenceDiagram
       else clean
         Deliver->>Target: Commit as git.author, push shadowarmy/N-slug with lease
         Deliver->>Target: Open or update pull request (summary, verification, limitations)
-        Deliver->>Realm: ready-to-merge + PR link
+        Deliver->>Realm: in-review; the Knight reviews (see review and fix loop)
       end
     end
   end

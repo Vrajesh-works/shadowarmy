@@ -79,20 +79,20 @@ Model names are passed through to Claude Code's `--model`; the defaults must be 
 | Contents | Read and write | Push task branches |
 | Pull requests | Read and write | Open, update and review pull requests |
 | Metadata | Read | Required by GitHub |
-| Checks, Commit statuses, Actions | Read | Wait for and read target CI |
+| Commit statuses, Actions | Read | Wait for the target's CI and read failing job logs. Fine-grained tokens have no Checks permission; when listing check runs is refused, the engine reads the commit's GitHub Actions jobs instead (`src/ci.ts`) |
 | Administration | Read and write | Only if New project orders should create repositories (to be verified) |
 
 Fine-grained tokens expire. The Sentinel warns in the Realm report 7 days before expiry when the expiry is known.
 
 Later version: a GitHub App the Monarch creates from a manifest during `init`, installed on chosen repositories, with tokens minted per run. This removes long-lived tokens but cannot create repositories on a personal account.
 
-The Realm's own `GITHUB_TOKEN` is used for everything inside the Realm (labels, comments, issues). The order caller workflow grants it `contents: read` (read `shadowarmy.yml`, rules and notes), `issues: write` (labels and status comment) and `actions: read` (count today's agent runs for the daily cap). Later workflows that open Realm pull requests add `pull-requests: write`.
+The Realm's own `GITHUB_TOKEN` is used for everything inside the Realm (labels, comments, issues). The order caller workflow grants it `contents: read` (read `shadowarmy.yml`, rules and notes), `issues: write` (labels and status comment) and `actions: write` (dispatch fix rounds, and read today's agent runs for the daily cap). Later workflows that open Realm pull requests add `pull-requests: write`.
 
 ## Variables (Realm repository variables)
 
 | Variable | Purpose |
 | --- | --- |
-| `SHADOWARMY_FAKE_AGENT` | Test Realms only. Replaces the Soldier with a canned scenario from `scripts/fake-agent.sh` (`add-file`, `edit-claude-md`, `no-changes`, `blocked`, `invalid-result`) so the rest of the pipeline can be tested repeatably. Unknown values fail the order. Leave unset in a real Realm. |
+| `SHADOWARMY_FAKE_AGENT` | Test Realms only. Replaces the Soldier's first round with a canned scenario from `scripts/fake-agent.sh` (`add-file`, `edit-claude-md`, `no-changes`, `blocked`, `invalid-result`, `seed-bug`; fix rounds then use the real Soldier) or with `stubborn-bug`, which never fixes its bug, so the rest of the pipeline can be tested repeatably. The Knight is always real, so a Claude credential is still required. Unknown values fail the order. Leave unset in a real Realm. |
 
 ## Labels
 
@@ -145,21 +145,36 @@ Thin files that only declare triggers and permissions. Example `template/.github
 
 ```yaml
 name: shadowarmy order
+
+# Thin caller: declares the triggers and permissions, then hands over to the
+# engine. The engine checks again that the sender is the Monarch (or, for a
+# dispatched fix round, the engine itself).
 on:
   issues:
     types: [labeled]
+  # The engine dispatches each fix round of an order as a new run.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Order issue number
+        required: true
+        type: number
+
 permissions:
   contents: read
   issues: write
-  actions: read
+  # write: the engine dispatches fix rounds and reads today's runs for the daily cap.
+  actions: write
+
 jobs:
   order:
-    if: github.event.label.name == 'arise'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'arise'
+    # Only runs that do work join the group, so other labels never cancel a pending order run.
     concurrency:
-      group: shadowarmy-${{ github.event.issue.number }}
+      group: shadowarmy-${{ github.event.issue.number || inputs.issue }}
       cancel-in-progress: false
     uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
     secrets: inherit
 ```
 
-The engine's reusable workflow re-checks the sender against `monarch` itself; the `if:` above is only a cheap filter. The concurrency group sits on the `order` job, not the workflow, so only `arise` runs join it: a run for any other label is skipped before it can cancel a pending `arise` run. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).
+The engine's reusable workflow re-checks the sender itself (the Monarch, or for a dispatched fix round also the engine's `github-actions[bot]`); the `if:` above is only a cheap filter. The concurrency group sits on the `order` job, not the workflow, so only `arise` and dispatched runs join it: a run for any other label is skipped before it can cancel a pending order run. Realms set up before milestone 2 must update this file (the `workflow_dispatch` trigger and `actions: write`), or fix rounds cannot start. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).

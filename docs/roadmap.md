@@ -47,6 +47,8 @@ Goal: no pull request reaches the Monarch without an independent review and gree
 - CI wait in job; `waiting-ci` hand-off (Sentinel picks it up in milestone 3, so until then the run waits up to `ci.max_wait_minutes` in job).
 - Fix rounds from failing CI with log excerpts.
 
+Status: implemented (decisions 30-37); done once the acceptance runs below are recorded on the sandbox Realm in the milestone's pull request.
+
 Acceptance:
 - A seeded order that produces a known bug gets a Knight finding and is fixed in a later round.
 - A target with a failing test reaches `ready-to-merge` only after a fix round makes it pass.

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseIssueLabeledEvent } from "../src/event.ts";
+import { loadDispatchedIssue, parseDispatchEvent, parseIssueLabeledEvent } from "../src/event.ts";
+import { FakeGitHub } from "./helpers/fakeGitHub.ts";
 import { taskBranchName, isTaskBranch } from "../src/names.ts";
 import { labeledEvent } from "./helpers/fixtures.ts";
 
 describe("parseIssueLabeledEvent", () => {
   it("reads the fields the engine needs", () => {
     assert.deepEqual(parseIssueLabeledEvent(labeledEvent({ body: "b" })), {
+      trigger: "label",
       label: "arise",
       sender: "the-monarch",
       issue: { number: 42, title: "Add an RSS feed", body: "b", labels: ["order", "arise"] },
@@ -42,5 +44,32 @@ describe("taskBranchName", () => {
     for (const title of ["", "a", "Ünïcödé only", "--", "Release v2.0 (final)", "日本語のタイトル"]) {
       assert.ok(isTaskBranch(taskBranchName(12, title)), title);
     }
+  });
+});
+
+describe("dispatch events", () => {
+  const payload = {
+    inputs: { issue: "42" },
+    sender: { login: "github-actions[bot]" },
+    repository: { full_name: "the-monarch/realm", owner: { login: "the-monarch" }, private: true },
+  };
+
+  it("reads the issue number and sender, then loads the issue from the API", async () => {
+    const dispatch = parseDispatchEvent(payload);
+    assert.deepEqual(dispatch, {
+      sender: "github-actions[bot]",
+      issueNumber: 42,
+      repository: { fullName: "the-monarch/realm", owner: "the-monarch", private: true },
+    });
+    const gh = new FakeGitHub();
+    Object.assign(gh.issue("the-monarch/realm", 42), { title: "Add an RSS feed", body: "b", labels: ["order", "in-progress"] });
+    assert.deepEqual((await loadDispatchedIssue(gh, dispatch)).issue, { number: 42, title: "Add an RSS feed", body: "b", labels: ["order", "in-progress"] });
+  });
+
+  it("rejects malformed issue inputs", () => {
+    for (const issue of ["0", "-1", "4.2", "42; rm -rf /", "", "12345678901"]) {
+      assert.throws(() => parseDispatchEvent({ ...payload, inputs: { issue } }), /inputs.issue is missing/, issue);
+    }
+    assert.throws(() => parseDispatchEvent({ sender: payload.sender, repository: payload.repository }), /not a workflow_dispatch event/);
   });
 });

@@ -17,7 +17,7 @@ Maintenance note: whenever the architecture, an order's lifecycle, a label, a co
 
 ## Current Context Summary
 
-shadowarmy is in early build (November 9, 2026). Milestones 0 and 1 are in place: the foundation modules, engine CI, and the single-task order workflow, where an Order issue labeled `arise` becomes a pull request by one Soldier, with a diff guard and honest failure reporting. The Knight, commands, Sentinel, Marshal, CLI and Scout are not built yet. The agreed design:
+shadowarmy is in early build (November 9, 2026). Milestones 0 to 2 are in place: the foundation modules, engine CI, and the order workflow, where an Order issue labeled `arise` becomes a pull request by a Soldier, reviewed by a Knight, fixed in bounded fix rounds and held until the target's CI passes. Commands, the Sentinel, the Marshal, the CLI and the Scout are not built yet. The agreed design:
 
 - **Product:** an AI software team with exactly one human, the Monarch. The Monarch writes orders as GitHub issues; agents plan, implement, review and test the work and deliver it as pull requests in the Monarch's project repositories.
 - **Two kinds of repository:**

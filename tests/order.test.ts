@@ -1,53 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
 import { parseIssueLabeledEvent } from "../src/event.ts";
 import { runDeliver } from "../src/order/deliver.ts";
 import { runFail } from "../src/order/fail.ts";
 import { runGate, TARGET_ARCHIVE, type GateInput } from "../src/order/gate.ts";
-import { RealmIssue } from "../src/realmIssue.ts";
-import { parseStatusComment, type StateBlock } from "../src/statusComment.ts";
+import type { StateBlock } from "../src/statusComment.ts";
 import { FakeGitHub } from "./helpers/fakeGitHub.ts";
 import { labeledEvent, result } from "./helpers/fixtures.ts";
-
-const ENGINE = fileURLToPath(new URL("..", import.meta.url));
-const REALM = "the-monarch/realm";
-const TARGET = "the-monarch/site";
-const run = { runId: 99, runUrl: "https://github.com/the-monarch/realm/actions/runs/99", serverUrl: "https://github.com" };
-
-const ORDER_BODY = "### Target repository\n\nthe-monarch/site\n\n### Task\n\nAdd a greeting to README.md.\n\n### Base branch\n\n_No response_";
-
-function tmp(): string {
-  return mkdtempSync(join(tmpdir(), "shadowarmy-test-"));
-}
-
-function realmDir(config = "version: 1\nmonarch: the-monarch\ntargets: [the-monarch/*]\n"): string {
-  const dir = tmp();
-  writeFileSync(join(dir, "shadowarmy.yml"), config);
-  mkdirSync(join(dir, "rules"));
-  writeFileSync(join(dir, "rules", "company.md"), "Be careful.\n");
-  return dir;
-}
-
-function status(gh: FakeGitHub): { body: string; state: StateBlock | null } {
-  const comment = gh.issue(REALM, 42).comments[0];
-  if (comment === undefined) return { body: "", state: null };
-  const parsed = parseStatusComment(comment.body);
-  return { body: comment.body, state: parsed.ok ? parsed.state : null };
-}
-
-/** Seed the status comment an earlier run left on the issue. */
-async function seedStatus(gh: FakeGitHub, state: Partial<StateBlock>): Promise<void> {
-  const block: StateBlock = {
-    version: 1, kind: "order", target: TARGET, base: null, branch: "shadowarmy/42-add-an-rss-feed", pr: null,
-    round: 0, runs: [], ciWaitStartedAt: null, lastError: null, parent: null, dependsOn: [], ...state,
-  };
-  await new RealmIssue(gh, REALM, 42).writeStatus({ state: "in-progress", summary: "Working." }, block);
-}
+import { ENGINE, freshIssue, ORDER_BODY, REALM, realmDir, run, seedStatus, sh, status, TARGET, targetRepo, tmp, type TargetRepo } from "./helpers/orderHarness.ts";
 
 async function gate(
   gh: FakeGitHub,
@@ -80,12 +43,6 @@ async function gate(
   return { output, logs, authorized };
 }
 
-function freshIssue(labels = ["order", "arise"]): FakeGitHub {
-  const gh = new FakeGitHub();
-  gh.issue(REALM, 42).labels = labels;
-  return gh;
-}
-
 describe("gate", () => {
   it("starts a valid order: in-progress, status comment, inputs and job outputs", async () => {
     const gh = freshIssue();
@@ -97,9 +54,13 @@ describe("gate", () => {
       target: TARGET,
       baseRef: "main",
       baseSha: remote.baseSha,
+      startSha: remote.baseSha,
+      round: 0,
       model: "sonnet",
+      knightModel: "opus",
       maxTurns: 150,
       timeoutMinutes: 45,
+      judgeTimeoutMinutes: 135,
       fakeAgent: "",
     });
     assert.ok(authorized);
@@ -297,9 +258,14 @@ describe("gate", () => {
   it("passes a known fake agent scenario through and rejects unknown ones", async () => {
     const gh = freshIssue();
     const inputsDir = join(tmp(), "in");
-    const { output } = await gate(gh, { fakeAgent: "edit-claude-md", hasClaudeCredential: false, inputsDir });
+    const { output } = await gate(gh, { fakeAgent: "edit-claude-md", inputsDir });
     assert.equal(output.fakeAgent, "edit-claude-md");
     assert.ok(existsSync(join(inputsDir, "fake-agent.sh")));
+
+    // The Knight is always Claude, and fake scenarios hand fix rounds to the real Soldier.
+    const noClaude = freshIssue();
+    await gate(noClaude, { fakeAgent: "add-file", hasClaudeCredential: false });
+    assert.match(status(noClaude).body, /Missing Realm secrets: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY/);
 
     const bad = freshIssue();
     await gate(bad, { fakeAgent: "rm -rf" });
@@ -309,40 +275,9 @@ describe("gate", () => {
 
 // ---- deliver: real git against a local bare repository standing in for the target ----
 
-function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-    env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
-  });
-}
-
-interface TargetRepo {
-  remoteRoot: string;
-  bare: string;
-  baseSha: string;
-  work: string;
-}
-
 interface Fixture extends TargetRepo {
   gh: FakeGitHub;
   soldierDir: string;
-}
-
-/** A bare target repository under `file://<remoteRoot>/the-monarch/site.git` with one commit on its default branch, and a working copy. */
-function targetRepo(files: Record<string, string> = { "README.md": "# Site\n" }, defaultBranch = "main"): TargetRepo {
-  const remoteRoot = tmp();
-  const bare = join(remoteRoot, "the-monarch", "site.git");
-  mkdirSync(bare, { recursive: true });
-  sh(bare, "init", "--bare", "--quiet", `--initial-branch=${defaultBranch}`);
-  const work = tmp();
-  sh(work, "init", "--quiet", `--initial-branch=${defaultBranch}`);
-  for (const [path, text] of Object.entries(files)) writeFileSync(join(work, path), text);
-  sh(work, "add", "-A");
-  sh(work, "commit", "--quiet", "-m", "initial");
-  sh(work, "push", "--quiet", bare, defaultBranch);
-  return { remoteRoot, bare, baseSha: sh(work, "rev-parse", "HEAD").trim(), work };
 }
 
 /** A target repository, its working copy, and an empty soldier output folder. */
@@ -360,11 +295,14 @@ function soldier(f: Fixture, edit: (dir: string) => void, res: object | null = r
   if (res !== null) writeFileSync(join(f.soldierDir, "result.json"), JSON.stringify(res));
 }
 
-async function deliver(f: Fixture, options: { body?: string; soldierJob?: string; state?: Partial<StateBlock> } = {}) {
+async function deliver(
+  f: Fixture,
+  options: { body?: string; soldierJob?: string; state?: Partial<StateBlock>; startSha?: string; round?: number; knightInputsDir?: string } = {},
+) {
   // Seed the status comment the gate would have written.
   if (f.gh.issue(REALM, 42).comments.length === 0) await seedStatus(f.gh, options.state ?? {});
 
-  await runDeliver({
+  return runDeliver({
     event: parseIssueLabeledEvent(labeledEvent({ body: options.body ?? ORDER_BODY })),
     realmClient: f.gh,
     targetClient: f.gh,
@@ -374,6 +312,10 @@ async function deliver(f: Fixture, options: { body?: string; soldierJob?: string
     soldierJob: options.soldierJob ?? "success",
     baseSha: f.baseSha,
     baseRef: "main",
+    startSha: options.startSha ?? f.baseSha,
+    round: options.round ?? 0,
+    engineDir: ENGINE,
+    knightInputsDir: options.knightInputsDir ?? tmp(),
     workDir: tmp(),
     run: { ...run, serverUrl: `file://${f.remoteRoot}` },
     log: () => undefined,
@@ -403,9 +345,9 @@ describe("deliver", () => {
     assert.equal(pull.title, "Add RSS feed at /rss.xml");
     assert.ok(pull.body.includes(`[issue #42](file://${f.remoteRoot}/the-monarch/realm/issues/42)`), "private targets link the Realm issue");
 
-    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "ready-to-merge"]);
+    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "in-review"]);
     const { body, state } = status(f.gh);
-    assert.match(body, /Pull request #1 in the-monarch\/site is ready for your review/);
+    assert.match(body, /A Knight is reviewing pull request #1 in the-monarch\/site\./);
     assert.ok(state);
     assert.equal(state.pr, 1);
     assert.deepEqual(state.runs, [{ role: "soldier", runId: 99, conclusion: "success" }]);
@@ -434,7 +376,7 @@ describe("deliver", () => {
     const f = fixture({ "README.md": "# Site\n", "CLAUDE.md": "Notes\n" });
     soldier(f, (dir) => { writeFileSync(join(dir, "CLAUDE.md"), "Notes\nMore\n"); });
     await deliver(f, { body: ORDER_BODY.replace("Add a greeting to README.md.", "Add a testing note to CLAUDE.md.") });
-    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "ready-to-merge"]);
+    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "in-review"]);
     assert.match(status(f.gh).body, /Allowed because the order names them: CLAUDE.md/);
   });
 
@@ -532,7 +474,7 @@ describe("deliver", () => {
     soldier(f, (dir) => { writeFileSync(join(dir, "README.md"), "changed\n"); });
     await deliver(f, { state: { branch: null } });
     // A null branch falls back to the generated task branch.
-    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "ready-to-merge"]);
+    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "in-review"]);
     assert.equal(sh(f.bare, "rev-parse", "main").trim(), f.baseSha);
   });
 });
