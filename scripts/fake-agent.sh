@@ -28,14 +28,14 @@ JSON
 case "$scenario" in
   add-file)
     printf 'Written by the shadowarmy fake agent.\n' > shadowarmy-fake-agent.txt
-    result done "Add fake agent marker file" "Adds shadowarmy-fake-agent.txt." null
+    result "done" "Add fake agent marker file" "Adds shadowarmy-fake-agent.txt." null
     ;;
   edit-claude-md)
     printf '\nRun the tests before every change.\n' >> CLAUDE.md
-    result done "Update contributor notes" "Edits CLAUDE.md although the order did not ask for it." null
+    result "done" "Update contributor notes" "Edits CLAUDE.md although the order did not ask for it." null
     ;;
   no-changes)
-    result done "Nothing to change" "Reports done without changing any file." null
+    result "done" "Nothing to change" "Reports done without changing any file." null
     ;;
   blocked)
     result blocked "Need a decision" "Stops to ask the owner." '"Should the feature be on by default? Reply /answer yes or /answer no."'
