@@ -1,6 +1,6 @@
 # Development
 
-Updated November 9, 2026 (milestone 1).
+Updated November 9, 2026 (milestone 2).
 
 ## Prerequisites
 
@@ -68,10 +68,10 @@ Agents are not mocked in end-to-end tests. For unit tests of the orchestration a
 
 ## Debugging A Run
 
-- The status comment links every run. Open the run, then the `work` job.
+- The status comment links every run. Open the run, then the job for the failed or pending step.
 - Agent transcripts are uploaded as a run artifact (`agent-<role>-<round>`) with secrets masked. Download with `gh run download <run-id> --repo <realm>`.
-- Re-run a single order with `/retry` instead of re-running the workflow from the Actions UI, so the state block stays consistent.
-- `npx shadowarmy doctor` checks secrets, labels, config and token access.
+- Until `/retry` arrives in milestone 3, re-add `arise` to a failed order instead of re-running the workflow from the Actions UI, so the state block stays consistent.
+- The planned `npx shadowarmy doctor` command arrives with the setup CLI in milestone 5.
 
 ## Releasing
 

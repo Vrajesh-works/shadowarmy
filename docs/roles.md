@@ -38,9 +38,9 @@ Claude Code is pinned (`CLAUDE_CODE_VERSION` in `.github/workflows/order.yml`, [
 | `order.md` | Order issue title and parsed task text | all |
 | `task.md` | Task title, description, acceptance criteria | Soldier, Knight, Scout |
 | `answers.md` | Texts of the issue's `/answer` comments whose author is the configured Monarch, oldest first | all |
-| `feedback.md` | Knight findings, Scout bugs, CI failure excerpts and Monarch change requests for this round; rebuilt by the fix round's gate from the Knight's posted review and the failing checks of the pull request's head commit (`src/feedback.ts`) | Soldier on fix rounds |
+| `feedback.md` | Blocker and major Knight findings, Scout bugs, CI failure excerpts and Monarch change requests for this round; rebuilt by the fix round's gate from the Knight's posted review and the failing checks of the pull request's head commit (`src/feedback.ts`) | Soldier on fix rounds |
 | `round` | Fix rounds used so far (0 for the first Soldier run) | Soldier, Knight |
-| `diff.patch` | Full diff of the task branch against the default branch | Knight, Scout |
+| `diff.patch` | Full diff of the task branch against the commit where the first round started | Knight, Scout |
 | `soldier-result.json` | Latest Soldier output | Knight, Scout |
 
 ## Marshal
@@ -131,7 +131,7 @@ For New project orders, `newProject` holds `{ "name", "visibility", "language", 
 
 - The `judge` job posts the review to the pull request as a comment-type review on the head commit, after checking that the head is still the commit the Knight reviewed (if someone else pushed to the task branch meanwhile, the order fails at step "review" and nothing is posted). The review body ends with a machine block (`<!-- shadowarmy:review {...} -->`) from which the next fix round reads the findings; blocker and major findings go to the Soldier, minor findings are listed in the pull request body when the change is approved.
 - `injectionNoticed` (boolean) is required, as for the Soldier. `line` is `null` for a whole-file finding; `suggestedFix` may be empty.
-- **Failure modes:** findings without file references, a `verdict` that contradicts the findings (approve with a blocker). Both are validation failures.
+- **Failure modes:** findings without file references, or a `verdict` that contradicts the findings (approval with a blocker or major finding, or changes requested with only minor findings). Both are validation failures.
 
 ## Scout
 

@@ -57,15 +57,21 @@ describe("Realm template", () => {
 
   // Oracle: the scenario list in decision 24; every scenario the gate accepts must run.
   const script = fileURLToPath(new URL("../scripts/fake-agent.sh", import.meta.url));
+  const bashPath = (path: string): string =>
+    process.platform === "win32" ? path.replace(/^([A-Za-z]):\\/, (_match, drive: string) => `/mnt/${drive.toLowerCase()}/`).replaceAll("\\", "/") : path;
+  const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`;
   const runScenario = (scenario: string, round?: number) => {
     const work = mkdtempSync(join(tmpdir(), "shadowarmy-fake-"));
     execFileSync("git", ["init", "--quiet"], { cwd: work });
     const out = mkdtempSync(join(tmpdir(), "shadowarmy-fake-out-"));
     const inputs = mkdtempSync(join(tmpdir(), "shadowarmy-fake-in-"));
     if (round !== undefined) writeFileSync(join(inputs, "round"), `${String(round)}\n`);
-    const ran = spawnSync("bash", [script, scenario], {
+    const args = process.platform === "win32"
+      ? ["-c", `export SHADOWARMY_OUT=${shellQuote(bashPath(out))} SHADOWARMY_IN=${shellQuote(bashPath(inputs))}; exec bash ${shellQuote(bashPath(script))} ${shellQuote(scenario)}`]
+      : [script, scenario];
+    const ran = spawnSync("bash", args, {
       cwd: work,
-      env: { ...process.env, SHADOWARMY_OUT: out, SHADOWARMY_IN: inputs },
+      env: process.platform === "win32" ? process.env : { ...process.env, SHADOWARMY_OUT: out, SHADOWARMY_IN: inputs },
       encoding: "utf8",
     });
     const resultPath = join(out, "result.json");

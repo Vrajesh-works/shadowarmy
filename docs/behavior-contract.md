@@ -1,6 +1,6 @@
 # shadowarmy Behavior Contract
 
-Updated November 8, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
+Updated November 9, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
 
 Milestone 0 added the deterministic building blocks for sections 4 and 5. Milestone 1 added the single-task order workflow (`.github/workflows/order.yml`, `src/order/`), which uses them. Milestone 2 added the Knight, fix rounds and the target CI wait. "End to end: pending" marks a rule whose implementation has not yet been proven by a recorded run on the sandbox Realm; recorded runs are linked (the sandbox Realm is private, so the links work only for its owner).
 
@@ -143,7 +143,7 @@ Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract. 
 Agreed November 8, 2026. Implemented in milestone 2 (`src/order/judge.ts`, `src/knightReview.ts`, `src/feedback.ts`, `roles/knight.md`; `tests/rounds.test.ts`, `tests/knightReview.test.ts`; end to end: pending). How the loop runs: each round is one workflow run (gate, soldier, deliver, knight, judge); the judge starts a fix round by dispatching a new run, whose gate rebuilds the feedback from the posted review and the failing checks ([decision 30](decisions.md)). The Knight runs in its own job with only the Claude credential, and a review counts only when it carries a valid review block, was posted by the engine's account and reviews the pull request's head commit ([decision 31](decisions.md)). The Knight reviews before the CI wait, so it gets no CI results ([decision 37](decisions.md)).
 
 - Every pull request is reviewed by a Knight before it can reach `ready-to-merge`. The Knight runs in a separate agent session that never saw the Soldier's conversation.
-- Inputs: order and task text, company rules, project notes, the full diff, the Soldier's `result.json`, CI results when available.
+- Inputs: order and task text, company rules, project notes, the full diff and the Soldier's `result.json`. The Knight reviews before the CI wait and receives no CI results.
 - Output: `review.json` with `verdict` (`approve`, `changes`), `findings` (severity `blocker`, `major`, `minor`; file; line; problem; suggested fix) and `scope` (`ok` or a note when the diff does more or less than asked).
 - `changes` starts a fix round: a new Soldier run on the same branch with the findings. Only `blocker` and `major` findings require a fix round; `minor` findings are listed in the pull request body.
 - The Knight posts its review as a pull request review in the target repository (comment type, never "approve" in GitHub's sense, so it never satisfies branch protection on its own).
@@ -153,10 +153,10 @@ Agreed November 8, 2026. Implemented in milestone 2 (`src/order/judge.ts`, `src/
 
 Agreed November 8, 2026. Implemented in milestone 2 (`src/ci.ts`; `tests/ci.test.ts`, `tests/rounds.test.ts`; end to end: pending), with these milestone 2 rules ([decision 33](decisions.md)): every completed check that did not pass counts as failing; no check within 2 minutes means no CI; until the Sentinel exists the judge waits in its job for up to `ci.max_wait_minutes` (at most 300 minutes), then moves to `needs-decision` instead of `waiting-ci`.
 
-- After each push, the engine waits for the pull request's checks inside the job for up to `ci.wait_minutes_in_job` (default 15).
-- Still pending: the task moves to `waiting-ci` and the job ends. The Sentinel checks again on each patrol until `ci.max_wait_minutes` (default 120), then moves to `needs-decision`.
-- Failing required checks start a fix round with the failing check names and a log excerpt (last `ci.log_excerpt_lines` lines, default 200, secrets masked by GitHub).
-- A target repository without CI is allowed. The status comment states "no CI in target repository; verification is the Soldier's and Scout's reported checks only".
+- In milestone 2, the judge waits inside the job for up to `ci.max_wait_minutes` (default 120, capped at 300), then moves to `needs-decision` if checks are still pending.
+- Still pending for milestone 3: after `ci.wait_minutes_in_job` (default 15), the task moves to `waiting-ci` and the job ends. The Sentinel checks again on each patrol until `ci.max_wait_minutes`, then moves to `needs-decision`.
+- Failing checks start a fix round with the failing check names and a log excerpt (last `ci.log_excerpt_lines` lines, default 200, secrets masked by GitHub).
+- A target repository without CI is allowed. The status comment states that verification is the Soldier's reported checks only (and the Scout's once that role exists).
 
 ## 11. Failure, Retry And Recovery
 

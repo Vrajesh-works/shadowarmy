@@ -71,11 +71,11 @@ or a pay-per-use API key: `gh secret set ANTHROPIC_API_KEY`. Use a credential de
 
 1. Open a new issue with the **Order** form: the target repository and the task.
 2. Add the `arise` label.
-3. Watch the issue: the label moves to `in-progress`, then `ready-to-merge` with a link to the pull request, or `failed` / `needs-decision` with the reason. The status comment links the workflow run.
+3. Watch the issue: the label moves through `in-progress` and `in-review`, then to `ready-to-merge` with a link to the pull request, or `failed` / `needs-decision` with the reason. The status comment links the workflow run.
 4. Review the pull request in the target repository and merge it yourself.
 
 Only the Monarch's `arise` counts. Labels added by anyone else are ignored and leave the issue unchanged.
 
 ## Test Mode
 
-A test Realm can replace the Soldier with a canned script by setting the repository variable `SHADOWARMY_FAKE_AGENT` to one of `add-file`, `edit-claude-md`, `no-changes`, `blocked` or `invalid-result` (see `scripts/fake-agent.sh` in the engine). Everything else (validation, diff guard, push, pull request, labels) runs for real. Leave it unset in a real Realm.
+A test Realm can replace the Soldier with a canned script by setting the repository variable `SHADOWARMY_FAKE_AGENT`; see [Variables](configuration.md#variables-realm-repository-variables) for the supported scenarios and their behavior. Leave it unset in a real Realm.

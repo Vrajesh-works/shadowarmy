@@ -121,7 +121,7 @@ describe("fix round gate (dispatch)", () => {
     // The packed checkout is the task branch head, not the base.
     const unpacked = tmp();
     execFileSync("tar", ["-xzf", join(inputsDir, "target.tar.gz"), "-C", unpacked]);
-    assert.equal(readFileSync(join(unpacked, "README.md"), "utf8"), "# Site\n\nHello world\n");
+    assert.equal(readFileSync(join(unpacked, "README.md"), "utf8").replace(/\r\n/g, "\n"), "# Site\n\nHello world\n");
     assert.deepEqual(r.gh.issue(REALM, 42).labels, ["order", "in-progress"]);
     assert.match(status(r.gh).body, /Fix round 1 of 3: a Soldier is addressing the feedback on pull request #1/);
   });

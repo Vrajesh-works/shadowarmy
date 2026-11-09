@@ -72,7 +72,7 @@ flowchart TB
 
 | Reusable workflow | Triggered by (in the Realm) | Jobs |
 | --- | --- | --- |
-| `order.yml` | `issues: labeled` with `arise`; dispatch from `command.yml` and `sentinel.yml` | `gate` (actor, config, form, target, credentials, daily cap, inputs), `soldier` (agent only), `deliver` (validate, apply, diff guard, push, PR, labels; later Knight, fix rounds, CI wait), `report-failure` (safety net) |
+| `order.yml` | `issues: labeled` with `arise`; engine dispatch for fix rounds (later also `command.yml` and `sentinel.yml`) | `gate` (actor, config, form, target, credentials, daily cap, inputs), `soldier` (agent only), `deliver` (validate, apply, diff guard, push, PR), `knight` (agent only), `judge` (validate and post review, dispatch fix rounds, wait for CI), `report-failure` (safety net) |
 | `plan.yml` | dispatch from `order.yml` for multi-task and New project orders | `plan` (Marshal, validate, render, request approval) |
 | `command.yml` | `issue_comment: created` | `command` (actor check, parse command, act or dispatch) |
 | `sentinel.yml` | `schedule`, `workflow_dispatch` | `patrol` (reconcile, resume, stuck detection, dispatch, report) |
@@ -170,7 +170,7 @@ There is no database. The data model is GitHub objects.
 | Realm report | Realm pinned issue | Sentinel only | Active work, decisions needed, ready PRs, failures, runs used |
 | Task branch | Target | Engine push step | `shadowarmy/<issue>-<slug>` |
 | Pull request | Target | Engine | Change, verification, limitations |
-| Knight review | Target PR | Engine (from `review.json`) | Findings as review comments |
+| Knight review | Target PR | Engine (from `review.json`) | Comment-type review body with findings and a machine block |
 | Run artifacts | Actions | Engine | Agent transcripts (redacted), Scout evidence |
 
 State block (version 1):

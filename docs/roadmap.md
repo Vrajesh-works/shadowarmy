@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated November 8, 2026. Each milestone is done only when its acceptance criteria pass end to end on real GitHub repositories (the sandbox Realm and sandbox targets in [DEVELOPMENT.md](../DEVELOPMENT.md)), with run links recorded in the milestone's pull request. Do not start a milestone before the previous one is done.
+Updated November 9, 2026. Each milestone is done only when its acceptance criteria pass end to end on real GitHub repositories (the sandbox Realm and sandbox targets in [DEVELOPMENT.md](../DEVELOPMENT.md)), with run links recorded in the milestone's pull request. Do not start a milestone before the previous one is done.
 
 ## Milestone 0: Repository Foundation
 
@@ -44,7 +44,7 @@ Goal: no pull request reaches the Monarch without an independent review and gree
 
 - Knight run after each push; review posted to the pull request.
 - Fix rounds with the Knight's blocker and major findings; round limit; `needs-decision` when exhausted.
-- CI wait in job; `waiting-ci` hand-off (Sentinel picks it up in milestone 3, so until then the run waits up to `ci.max_wait_minutes` in job).
+- CI wait in job. The `waiting-ci` hand-off arrives with the Sentinel in milestone 3, so until then the run waits up to `ci.max_wait_minutes` in job.
 - Fix rounds from failing CI with log excerpts.
 
 Status: implemented (decisions 30-37); done once the acceptance runs below are recorded on the sandbox Realm in the milestone's pull request.
