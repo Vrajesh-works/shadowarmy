@@ -19,7 +19,7 @@ sequenceDiagram
     Gate->>Gate: Log in run summary and stop (no change)
   else order already past the Soldier (for example ready-to-merge), even with an invalid shadowarmy.yml
     Gate->>Realm: Remove arise only
-  else config invalid, form invalid, target not allowed or secrets missing
+  else config invalid, form invalid, target not allowed, secrets missing, or private target from a public Realm
     Gate->>Realm: failed + status comment with reason and run link (earlier details kept)
   else daily cap reached
     Gate->>Realm: queued + status comment

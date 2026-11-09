@@ -83,7 +83,7 @@ jobs:
         with:
           name: soldier-input
           path: ${{ runner.temp }}/shadowarmy/in
-          retention-days: 7
+          retention-days: 1
 
   soldier:
     needs: gate
@@ -168,7 +168,7 @@ jobs:
           name: soldier-output
           path: ${{ runner.temp }}/shadowarmy/out
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
 
   deliver:
     needs: [gate, soldier]

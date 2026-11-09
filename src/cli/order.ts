@@ -55,6 +55,7 @@ async function main(command: string | undefined): Promise<void> {
       const result = await runGate({
         event,
         client: realmClient,
+        targetClient: createClient({ token: optional("SHADOWARMY_GH_TOKEN"), apiUrl }),
         realmDir: env("SHADOWARMY_REALM_DIR"),
         engineDir: env("SHADOWARMY_ENGINE_DIR"),
         inputsDir: env("SHADOWARMY_INPUTS_DIR"),

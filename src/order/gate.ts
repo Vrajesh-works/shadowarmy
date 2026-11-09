@@ -1,7 +1,7 @@
 // The `gate` job of order.yml: decides whether an `arise` event starts work.
 // Order of checks (functional-diagrams/actions/single-task-order.md):
 // sender is the Monarch -> config valid -> order form valid -> target allowed
-// -> credentials present -> daily cap -> fetch the target. Anything from a
+// -> credentials present -> target visibility -> daily cap -> fetch the target. Anything from a
 // non-Monarch account changes nothing. The gate fetches the target with
 // SHADOWARMY_GH_TOKEN and packs it for the soldier job, so that token never
 // reaches the job that runs the agent.
@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { checkTarget } from "../config.ts";
 import type { IssueLabeledEvent } from "../event.ts";
 import { git, GitError } from "../git.ts";
-import type { GitHubClient } from "../github.ts";
+import { GitHubError, repoPath, type GitHubClient } from "../github.ts";
 import { writeSoldierInputs } from "../inputs.ts";
 import { canTransition, readState, TRIGGER_LABEL } from "../labels.ts";
 import { countAgentRuns, startOfDay } from "../limits.ts";
@@ -28,6 +28,8 @@ export const FAKE_AGENT_SCENARIOS = ["add-file", "edit-claude-md", "no-changes",
 export interface GateInput {
   event: IssueLabeledEvent;
   client: GitHubClient;
+  /** A client authenticated with SHADOWARMY_GH_TOKEN, for reading the target repository. */
+  targetClient: GitHubClient;
   realmDir: string;
   engineDir: string;
   inputsDir: string;
@@ -136,6 +138,24 @@ export async function runGate(input: GateInput): Promise<GateOutput> {
     return STOP;
   }
 
+  if (!event.repository.private) {
+    const visibility = await readVisibility(input.targetClient, order.target);
+    if (visibility === "unreadable") {
+      await reportFailure(issue, run, state, "check out target", `Check that SHADOWARMY_GH_TOKEN can read ${order.target}.`);
+      return STOP;
+    }
+    if (visibility === "private") {
+      await reportFailure(
+        issue,
+        run,
+        state,
+        "check target",
+        `${order.target} is private, but this Realm is public. Anyone can download the workflow artifacts of a public Realm, which would expose the private target's source code. Make the Realm private to order changes to private repositories.`,
+      );
+      return STOP;
+    }
+  }
+
   const used = await countAgentRuns(input.client, event.repository.fullName, startOfDay(input.now, cfg.timezone));
   if (used >= cfg.limits.max_runs_per_day) {
     await report(
@@ -206,6 +226,16 @@ export async function runGate(input: GateInput): Promise<GateOutput> {
     timeoutMinutes: cfg.limits.run_timeout_minutes,
     fakeAgent: fake,
   };
+}
+
+async function readVisibility(client: GitHubClient, target: string): Promise<"public" | "private" | "unreadable"> {
+  try {
+    const repo = await client.request<{ private?: unknown }>("GET", `/repos/${repoPath(target)}`);
+    return repo.private === false ? "public" : "private";
+  } catch (error) {
+    if (error instanceof GitHubError && (error.status === 403 || error.status === 404)) return "unreadable";
+    throw error;
+  }
 }
 
 /** The packed target checkout in the Soldier inputs; the soldier job extracts it. */

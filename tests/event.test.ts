@@ -10,7 +10,7 @@ describe("parseIssueLabeledEvent", () => {
       label: "arise",
       sender: "the-monarch",
       issue: { number: 42, title: "Add an RSS feed", body: "b", labels: ["order", "arise"] },
-      repository: { fullName: "the-monarch/realm", owner: "the-monarch" },
+      repository: { fullName: "the-monarch/realm", owner: "the-monarch", private: true },
     });
   });
 
@@ -19,6 +19,7 @@ describe("parseIssueLabeledEvent", () => {
     assert.equal(parseIssueLabeledEvent({ ...event, issue: { ...event.issue, body: null } }).issue.body, "");
     assert.throws(() => parseIssueLabeledEvent({ action: "opened" }), /not an issues.labeled event/);
     assert.throws(() => parseIssueLabeledEvent({ ...event, sender: {} }), /sender.login is missing/);
+    assert.throws(() => parseIssueLabeledEvent({ ...event, repository: { ...event.repository, private: undefined } }), /repository.private is missing/);
     assert.throws(() => parseIssueLabeledEvent({ ...event, issue: { ...event.issue, pull_request: {} } }), /pull request/);
   });
 });

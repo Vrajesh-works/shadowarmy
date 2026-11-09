@@ -51,14 +51,17 @@ async function seedStatus(gh: FakeGitHub, state: Partial<StateBlock>): Promise<v
 
 async function gate(
   gh: FakeGitHub,
-  overrides: Partial<GateInput> & { body?: string; sender?: string; label?: string; remote?: TargetRepo } = {},
+  overrides: Partial<GateInput> & { body?: string; sender?: string; label?: string; remote?: TargetRepo; realmPrivate?: boolean } = {},
 ) {
   const logs: string[] = [];
   let authorized = false;
   const remote = overrides.remote ?? targetRepo();
   const output = await runGate({
-    event: parseIssueLabeledEvent(labeledEvent({ body: overrides.body ?? ORDER_BODY, sender: overrides.sender, label: overrides.label })),
+    event: parseIssueLabeledEvent(
+      labeledEvent({ body: overrides.body ?? ORDER_BODY, sender: overrides.sender, label: overrides.label, realmPrivate: overrides.realmPrivate }),
+    ),
     client: gh,
+    targetClient: gh,
     realmDir: realmDir(),
     engineDir: ENGINE,
     inputsDir: join(tmp(), "in"),
@@ -189,6 +192,36 @@ describe("gate", () => {
     const gh = freshIssue();
     await gate(gh, { hasClaudeCredential: false, githubToken: "" });
     assert.match(status(gh).body, /Missing Realm secrets: SHADOWARMY_GH_TOKEN; CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY\./);
+  });
+
+  it("refuses a private target from a public Realm before fetching it or starting work", async () => {
+    const gh = freshIssue();
+    gh.repos.set(TARGET, { private: true });
+    const inputsDir = join(tmp(), "in");
+    const { output } = await gate(gh, { realmPrivate: false, inputsDir });
+    assert.deepEqual(output, { proceed: false });
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
+    const { body } = status(gh);
+    assert.match(body, /step &quot;check target&quot;|step "check target"/);
+    assert.match(body, /this Realm is public/);
+    assert.match(body, /Make the Realm private/);
+    assert.ok(!existsSync(join(inputsDir, TARGET_ARCHIVE)), "the target was not fetched");
+  });
+
+  it("starts an order for a public target from a public Realm", async () => {
+    const gh = freshIssue();
+    gh.repos.set(TARGET, { private: false });
+    const { output } = await gate(gh, { realmPrivate: false });
+    assert.equal(output.proceed, true);
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "in-progress"]);
+  });
+
+  it("reports a checkout failure when a public Realm cannot read the target", async () => {
+    const gh = freshIssue();
+    const { output } = await gate(gh, { realmPrivate: false });
+    assert.equal(output.proceed, false);
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
+    assert.match(status(gh).body, /Check that SHADOWARMY_GH_TOKEN can read the-monarch\/site/);
   });
 
   it("queues the order when the daily cap is reached", async () => {

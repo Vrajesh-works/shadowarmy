@@ -8,7 +8,7 @@ export interface IssueLabeledEvent {
   label: string;
   sender: string;
   issue: { number: number; title: string; body: string; labels: string[] };
-  repository: { fullName: string; owner: string };
+  repository: { fullName: string; owner: string; private: boolean };
 }
 
 function str(value: unknown, what: string): string {
@@ -32,6 +32,8 @@ export function parseIssueLabeledEvent(payload: unknown): IssueLabeledEvent {
       })
     : [];
   if (issue.pull_request !== undefined) throw new Error("event payload: labeled item is a pull request, not an issue");
+  const isPrivate = p.repository.private;
+  if (typeof isPrivate !== "boolean") throw new Error("event payload: repository.private is missing");
   return {
     label: str(p.label.name, "label.name"),
     sender: str((p.sender as { login?: unknown } | undefined)?.login, "sender.login"),
@@ -44,6 +46,7 @@ export function parseIssueLabeledEvent(payload: unknown): IssueLabeledEvent {
     repository: {
       fullName: str(p.repository.full_name, "repository.full_name"),
       owner: str((p.repository.owner as { login?: unknown } | undefined)?.login, "repository.owner.login"),
+      private: isPrivate,
     },
   };
 }

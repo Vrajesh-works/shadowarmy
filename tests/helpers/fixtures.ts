@@ -2,7 +2,7 @@
 
 import type { SoldierResult } from "../../src/soldierResult.ts";
 
-export function labeledEvent(overrides: { label?: string | undefined; sender?: string | undefined; body?: string | undefined; title?: string | undefined; labels?: string[] | undefined } = {}) {
+export function labeledEvent(overrides: { label?: string | undefined; sender?: string | undefined; body?: string | undefined; title?: string | undefined; labels?: string[] | undefined; realmPrivate?: boolean | undefined } = {}) {
   return {
     action: "labeled",
     label: { name: overrides.label ?? "arise" },
@@ -13,7 +13,7 @@ export function labeledEvent(overrides: { label?: string | undefined; sender?: s
       body: overrides.body ?? "",
       labels: (overrides.labels ?? ["order", "arise"]).map((name) => ({ name })),
     },
-    repository: { full_name: "the-monarch/realm", owner: { login: "the-monarch" } },
+    repository: { full_name: "the-monarch/realm", owner: { login: "the-monarch" }, private: overrides.realmPrivate ?? true },
   };
 }
 

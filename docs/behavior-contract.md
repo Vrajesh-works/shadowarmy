@@ -31,6 +31,7 @@ Agreed November 8, 2026.
   - `projects/<owner>__<repo>.md`: optional per-project notes (stack, commands, conventions), given to agents working on that project. Agents may propose updates to these notes; the update is a pull request in the Realm, never a direct commit.
 - **Target repository:** any repository the Monarch's GitHub credential can write to. It holds no shadowarmy files. Branch protection on its default branch is recommended and the `protect` CLI command offers to set it.
 - A Realm must not be its own target. The engine refuses an order whose target equals the Realm.
+- A public Realm cannot target private repositories. Anyone can download a public repository's workflow artifacts, which carry the target checkout between jobs, so the engine refuses such an order before fetching the target ([decision 29](decisions.md)).
 
 ## 3. Orders And Tasks
 

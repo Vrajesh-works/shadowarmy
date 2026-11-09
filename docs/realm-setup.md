@@ -9,6 +9,8 @@ gh repo create realm --private --clone
 cd realm
 ```
 
+Keep the Realm private if any target repository is private. Anyone can download a public repository's workflow artifacts, which carry the target's source between jobs, so a public Realm refuses orders for private targets.
+
 Copy everything inside the engine's `template/` folder into it (including the hidden `.github` folder), then commit and push:
 
 ```sh
