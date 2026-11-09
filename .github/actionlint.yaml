@@ -1,0 +1,9 @@
+# actionlint 1.7.12 does not yet know the documented job.workflow_repository
+# and job.workflow_sha context properties (rhysd/actionlint#707), which the
+# reusable workflow uses to check out the engine (docs/decisions.md, decision
+# 22). Ignore only that false positive, only in that file. Remove this once a
+# released actionlint knows the properties.
+paths:
+  .github/workflows/order.yml:
+    ignore:
+      - 'property "workflow_(repository|sha)" is not defined in object type'
