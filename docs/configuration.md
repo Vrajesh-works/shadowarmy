@@ -1,6 +1,6 @@
 # Configuration
 
-Updated November 8, 2026. Status: agreed, not implemented. Keys and defaults here are the contract for `src/config.ts` and its schema.
+Updated November 8, 2026. Status: the `shadowarmy.yml` schema, defaults and validation, the label definitions and the issue form parser are implemented as library code (milestone 0) and not yet used by a workflow. Keys and defaults here are the contract for `src/config.ts` and `src/schemas/config.ts`; `tests/config.test.ts` checks that the example below parses to exactly the defaults in code.
 
 ## `shadowarmy.yml`
 
@@ -54,6 +54,16 @@ timezone: UTC               # daily cap reset
 
 Model names are passed through to Claude Code's `--model`; the defaults must be revisited when new models ship.
 
+### Validation Rules
+
+- Required: `version` (must be `1`) and `targets` (at least one entry, no duplicates). Everything else has a default. A key with an empty value (`max_turns:`) means the default.
+- Unknown keys are errors, so typos never silently fall back to a default.
+- All problems are reported at once, one line each, as `key.path: reason` (for example `limits.max_turns: must be integer`). Invalid YAML and duplicate keys are reported the same way.
+- `monarch` is a GitHub login. `targets` entries are `owner/name` or `owner/*`; matching is case-insensitive, and the Realm itself is never an allowed target even when a wildcard covers it.
+- Ranges: `max_turns` 1-1000, `run_timeout_minutes` 1-360 (GitHub's job limit), `max_fix_rounds` 0-20, `max_concurrent_soldiers` 1-20, `max_runs_per_day` 1-1000, `max_file_size_mb` 1-100, `ci.wait_minutes_in_job` 0-359, `ci.max_wait_minutes` 1-10080, `ci.log_excerpt_lines` 1-5000, `sentinel.interval_minutes` 5-1440.
+- `ci.wait_minutes_in_job` must be less than `limits.run_timeout_minutes`, and `ci.max_wait_minutes` at least `ci.wait_minutes_in_job`.
+- Model names are letters, digits and `. _ : [ ] -`. `git.author` is `Name <email>`. `timezone` is an IANA time zone name.
+
 ## Secrets (Realm repository secrets)
 
 | Secret | Required | Purpose |
@@ -103,21 +113,25 @@ Created by `init` and re-created by `npx shadowarmy doctor --fix`.
 
 `template/.github/ISSUE_TEMPLATE/order.yml`:
 
-| Field id | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `target` | input | yes | `owner/name`; validated against `targets` |
-| `task` | textarea | yes | Plain-language task and what done looks like |
-| `base` | input | no | Base branch; defaults to the target's default branch |
+| Field id | Label | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| `target` | Target repository | input | yes | `owner/name`; validated against `targets` |
+| `task` | Task | textarea | yes | Plain-language task and what done looks like |
+| `base` | Base branch | input | no | Base branch; defaults to the target's default branch |
 
 `template/.github/ISSUE_TEMPLATE/new-project.yml`:
 
-| Field id | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `idea` | textarea | yes | What to build and for whom |
-| `name` | input | no | Preferred repository name |
-| `visibility` | dropdown | yes | `private` (default) or `public` |
+| Field id | Label | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| `idea` | Idea | textarea | yes | What to build and for whom |
+| `name` | Repository name | input | no | Preferred repository name |
+| `visibility` | Visibility | dropdown | yes | `private` (default) or `public` |
 
-GitHub renders issue form answers as markdown sections (`### Target repository` followed by the value). The parser reads sections by their labels, trims whitespace, treats `_No response_` as empty and validates every value. A body that does not match the form is reported as `failed` with the reason.
+GitHub renders issue form answers as markdown sections (`### Target repository` followed by the value). The labels above are part of the contract: the templates in `template/` must use them exactly, in this order. The parser (`src/issueForm.ts`) reads sections by their labels, trims whitespace, accepts CRLF line endings, treats `_No response_` as empty and validates every value. A body that does not match the form is reported as `failed` with the reason.
+
+- Input and dropdown answers must be a single line. A textarea answer may contain anything, including lines that look like section headings: the real next heading is the last one that still lets the rest of the form parse, so pasted text cannot override a later field.
+- `base` must be a safe branch name: git's rules plus a conservative character set (letters, digits, `.`, `_`, `/`, `+`, `-`). `name` must be a valid repository name.
+- Bodies over 65536 characters (GitHub's limit) are rejected.
 
 ## Caller Workflows In The Realm
 

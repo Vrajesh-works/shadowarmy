@@ -4,7 +4,7 @@ One human. An army of AI agents that builds software on GitHub.
 
 shadowarmy turns one private GitHub repository, called **the Realm**, into an AI software team. You are the only human, **the Monarch**. You write an order as a GitHub issue ("in `you/blog`, add an RSS feed" or "new project: a CLI that converts CSV to JSON"), and the army plans it, builds it, reviews it and delivers it as a normal pull request in your project repository. Nothing merges without you.
 
-> **Status: design stage.** These documents describe the agreed design. Nothing is implemented yet. See [the roadmap](docs/roadmap.md) for the build order and [the behavior contract](docs/behavior-contract.md) for the rules the implementation must follow.
+> **Status: early build.** These documents describe the agreed design. Only the foundation (configuration, issue form, label and status comment modules with tests) exists; nothing runs an order yet. See [the roadmap](docs/roadmap.md) for the build order and [the behavior contract](docs/behavior-contract.md) for the rules the implementation must follow.
 
 ## Why it exists
 

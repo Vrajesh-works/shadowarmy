@@ -2,7 +2,7 @@
 
 Maintenance note: whenever the architecture, workflows, data model or repository layout changes, update this file in the same change.
 
-Status: agreed design, November 8, 2026. Not implemented.
+Status: agreed design, November 8, 2026. Only the milestone 0 modules marked "exists" in the engine layout below are implemented; no workflow that runs an order exists yet.
 
 ## Summary
 
@@ -103,20 +103,22 @@ flowchart TB
   M -- green or no CI --> O[ready-to-merge]
 ```
 
-## Repository Layouts (planned)
+## Repository Layouts
 
-Engine:
+Engine ("exists" marks what milestone 0 built; everything else is planned):
 
 ```text
 shadowarmy/
-  .github/workflows/      order.yml, plan.yml, command.yml, sentinel.yml (reusable), ci.yml (engine's own CI)
+  .github/workflows/      ci.yml (engine's own CI, exists); order.yml, plan.yml, command.yml, sentinel.yml (reusable)
   roles/                  marshal.md, soldier.md, knight.md, scout.md
+  scripts/                dev-only lint helpers (exists): check-workflow-expressions.ts, lint-shell.sh
   src/
     cli/                  init, doctor, protect
-    schemas/              config, state block, plan, result, review, scout (JSON Schema)
-    config.ts issueForm.ts labels.ts statusComment.ts git.ts pr.ts diffGuard.ts limits.ts sentinel.ts
+    schemas/              config.ts, state.ts (exist); plan, result, review, scout
+    config.ts issueForm.ts labels.ts statusComment.ts names.ts schema.ts (exist)
+    git.ts pr.ts diffGuard.ts limits.ts sentinel.ts
   template/               Realm skeleton (see below)
-  tests/
+  tests/                  unit tests and fixtures (exist)
   docs/  functional-diagrams/
 ```
 

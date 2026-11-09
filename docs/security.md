@@ -1,6 +1,6 @@
 # Security
 
-Updated November 8, 2026. Status: agreed, not implemented. Every safeguard below is a requirement for the milestone that introduces the affected component.
+Updated November 8, 2026. Status: agreed. Implemented so far (milestone 0): the custom workflow lint that rejects `${{ }}` in `run:` scripts (`scripts/check-workflow-expressions.ts`, run by engine CI), full-SHA pinning of third-party actions in the engine CI, schema validation of the state block with length caps, and escaping of untrusted text in status comments. Every other safeguard below is a requirement for the milestone that introduces the affected component.
 
 shadowarmy runs AI agents with write access to code, unattended, on text that may come from other people. The design assumes agents can be confused or manipulated and limits what a confused agent can do.
 
