@@ -129,7 +129,7 @@ For New project orders, `newProject` holds `{ "name", "visibility", "language", 
 }
 ```
 
-- The `judge` job posts the review to the pull request as a comment-type review on the head commit. The review body ends with a machine block (`<!-- shadowarmy:review {...} -->`) from which the next fix round reads the findings; blocker and major findings go to the Soldier, minor findings are listed in the pull request body when the change is approved.
+- The `judge` job posts the review to the pull request as a comment-type review on the head commit, after checking that the head is still the commit the Knight reviewed (if someone else pushed to the task branch meanwhile, the order fails at step "review" and nothing is posted). The review body ends with a machine block (`<!-- shadowarmy:review {...} -->`) from which the next fix round reads the findings; blocker and major findings go to the Soldier, minor findings are listed in the pull request body when the change is approved.
 - `injectionNoticed` (boolean) is required, as for the Soldier. `line` is `null` for a whole-file finding; `suggestedFix` may be empty.
 - **Failure modes:** findings without file references, a `verdict` that contradicts the findings (approve with a blocker). Both are validation failures.
 

@@ -104,7 +104,7 @@ Agreed November 8, 2026. The `arise` trigger and its actor check are implemented
 
 - The Monarch is the login in `monarch:` in `shadowarmy.yml`, defaulting to the Realm owner. Triggers and commands from any other account are ignored and logged in the run summary, never acted on.
 - Labels: adding `arise` starts an order. Only label events whose `sender` is the Monarch count.
-- Fix rounds are dispatched runs (`workflow_dispatch` with the issue number). A dispatch does work only when its sender is the Monarch or the engine (`github-actions[bot]`) and the order is `in-progress` waiting for a fix round ([decision 36](decisions.md)); any other dispatch changes nothing.
+- Fix rounds are dispatched runs (`workflow_dispatch` with the issue number). A dispatch does work only when its sender is the engine (`github-actions[bot]`) and the order is `in-progress` waiting for a fix round ([decision 36](decisions.md)); any other dispatch, including one by the Monarch, changes nothing.
 - Comment commands on an order or task issue, one per comment, at the start of a line:
   - `/approve`: approve the posted plan (or the pending repository creation for a New project).
   - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input. It is read from the comment itself when that run is assembled, not stored in the state block.

@@ -27,7 +27,7 @@ Edit `shadowarmy.yml`:
 
 Edit `rules/company.md` with your standing engineering rules, and optionally add `projects/<owner>__<repo>.md` notes per target. See [configuration](configuration.md) for every key and its limits.
 
-`.github/workflows/order.yml` calls the engine at `@main` until the first release; from milestone 5 it pins the `v1` tag. A Realm set up before milestone 2 must copy the current `template/.github/workflows/order.yml` again: fix rounds need its `workflow_dispatch` trigger and `actions: write`.
+`.github/workflows/order.yml` calls the engine at `@main` until the first release; from milestone 5 it pins the `v1` tag. A Realm set up before milestone 2 must copy the current `template/.github/workflows/order.yml` again: with the old caller, which lacks the `workflow_dispatch` trigger and `actions: write`, GitHub rejects every run at startup, so no order runs at all until the caller file is replaced.
 
 ## 3. Create The Labels
 

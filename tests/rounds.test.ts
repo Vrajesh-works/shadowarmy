@@ -100,7 +100,10 @@ async function fixGate(r: Round, sender = "github-actions[bot]") {
 describe("fix round gate (dispatch)", () => {
   it("rebuilds the Knight's findings as feedback.md and starts from the branch head", async () => {
     const r = await afterRoundZero();
-    postKnightReview(r, review());
+    postKnightReview(
+      r,
+      review({ findings: [...review().findings, { severity: "minor", file: "README.md", line: null, problem: "Consider a heading", suggestedFix: "" }] }),
+    );
     const { output, inputsDir } = await fixGate(r);
 
     assert.equal(output.proceed, true);
@@ -111,6 +114,7 @@ describe("fix round gate (dispatch)", () => {
     const feedback = readFileSync(join(inputsDir, "feedback.md"), "utf8");
     assert.match(feedback, /## Knight review/);
     assert.match(feedback, /\*\*major\*\* <code>README.md:3<\/code>: Greeting lacks a comma/);
+    assert.ok(!feedback.includes("Consider a heading"), "minor findings stay out of the Soldier's feedback");
     assert.equal(readFileSync(join(inputsDir, "round"), "utf8"), "1\n");
     assert.match(readFileSync(join(inputsDir, "order.md"), "utf8"), /Fix round: 1/);
 
@@ -161,10 +165,15 @@ describe("fix round gate (dispatch)", () => {
     assert.equal((await fixGate(roundZero)).output.proceed, false);
   });
 
-  it("lets the Monarch dispatch a fix round too", async () => {
+  it("changes nothing for a dispatch by the Monarch: only the engine starts fix rounds", async () => {
     const r = await afterRoundZero();
     postKnightReview(r, review());
-    assert.equal((await fixGate(r, "the-monarch")).output.proceed, true);
+    const before = r.gh.issue(REALM, 42).comments[0]?.body;
+    const { output, logs } = await fixGate(r, "the-monarch");
+    assert.equal(output.proceed, false);
+    assert.equal(r.gh.issue(REALM, 42).comments[0]?.body, before);
+    assert.deepEqual(r.gh.issue(REALM, 42).labels, ["order", "in-progress"]);
+    assert.match(logs.join("\n"), /only the engine \(github-actions\[bot\]\) starts fix rounds/);
   });
 
   it("fails when the pull request was closed", async () => {
@@ -212,7 +221,7 @@ describe("deliver in a fix round", () => {
     const { output, knightInputsDir } = await fixDeliver(r, (dir) => {
       writeFileSync(join(dir, "README.md"), "# Site\n\nHello, world\n");
     });
-    assert.deepEqual(output, { knight: true });
+    assert.deepEqual(output, { knight: true, headSha: sh(r.repo.bare, "rev-parse", BRANCH).trim() });
     assert.equal(sh(r.repo.bare, "rev-parse", `${BRANCH}~1`).trim(), r.head, "the fix is a new commit on top of round 0");
     assert.equal(sh(r.repo.bare, "show", `${BRANCH}:README.md`), "# Site\n\nHello, world\n");
 
@@ -236,7 +245,7 @@ describe("deliver in a fix round", () => {
     const { output } = await fixDeliver(r, (dir) => {
       writeFileSync(join(dir, "README.md"), "# Site\n\nHello, world\n");
     });
-    assert.deepEqual(output, { knight: false });
+    assert.deepEqual(output, { knight: false, headSha: "" });
     assert.equal(sh(r.repo.bare, "rev-parse", BRANCH).trim(), moved, "the concurrent commit is kept");
     assert.deepEqual(r.gh.issue(REALM, 42).labels, ["order", "failed"]);
     assert.match(status(r.gh).body, /step &quot;push&quot;|step "push"/);
@@ -249,7 +258,11 @@ describe("judge", () => {
     return { now: () => new Date(now), sleep: (ms: number) => { now += ms; return Promise.resolve(); } };
   }
 
-  async function judge(r: Round, body: unknown, options: { knightJob?: string; ciGraceMs?: number; workflowRef?: string; maxWait?: number } = {}) {
+  async function judge(
+    r: Round,
+    body: unknown,
+    options: { knightJob?: string; ciGraceMs?: number; workflowRef?: string; maxWait?: number; reviewedSha?: string } = {},
+  ) {
     const knightDir = tmp();
     if (body !== null) writeFileSync(join(knightDir, "review.json"), typeof body === "string" ? body : JSON.stringify(body));
     const soldierDir = tmp();
@@ -265,6 +278,7 @@ describe("judge", () => {
       soldierDir,
       knightJob: options.knightJob ?? "success",
       workflowRef: options.workflowRef ?? WORKFLOW_REF,
+      reviewedSha: options.reviewedSha ?? r.head,
       run,
       ...clock(),
       ciGraceMs: options.ciGraceMs ?? 60_000,
@@ -362,6 +376,32 @@ describe("judge", () => {
     const missing = await inReview(0);
     await judge(missing, null, { knightJob: "failure" });
     assert.match(status(missing.gh).body, /The knight job ended with &quot;failure&quot;|The knight job ended with "failure"/);
+  });
+
+  it("posts nothing when someone pushed to the task branch while the Knight reviewed", async () => {
+    const r = await inReview(0);
+    writeFileSync(join(r.repo.work, "OTHER.md"), "x\n");
+    sh(r.repo.work, "add", "-A");
+    sh(r.repo.work, "commit", "--quiet", "-m", "pushed during the review");
+    sh(r.repo.work, "push", "--quiet", r.repo.bare, BRANCH);
+    const moved = sh(r.repo.bare, "rev-parse", BRANCH).trim();
+    r.gh.checkRuns.set(moved, [{ id: 1, name: "test", status: "completed", conclusion: "success", app: { slug: "github-actions" } }]);
+
+    await judge(r, review({ verdict: "approve", findings: [] }));
+    assert.equal(r.gh.reviews.get(`${TARGET}#1`), undefined);
+    assert.deepEqual(r.gh.dispatches, []);
+    assert.deepEqual(r.gh.issue(REALM, 42).labels, ["order", "failed"]);
+    const { body } = status(r.gh);
+    assert.match(body, /step &quot;review&quot;|step "review"/);
+    assert.ok(body.includes(`moved to ${moved} while the Knight reviewed ${r.head}`));
+  });
+
+  it("fails when deliver did not record the reviewed commit", async () => {
+    const r = await inReview(0);
+    await judge(r, review(), { reviewedSha: "" });
+    assert.equal(r.gh.reviews.get(`${TARGET}#1`), undefined);
+    assert.deepEqual(r.gh.issue(REALM, 42).labels, ["order", "failed"]);
+    assert.match(status(r.gh).body, /did not record the commit the Knight reviewed/);
   });
 
   it("refuses to dispatch from an unexpected workflow reference", async () => {

@@ -63,6 +63,47 @@ describe("review body", () => {
     assert.equal(parseReviewBody(body)?.review.summary, hostile);
   });
 
+  it("stays within GitHub's 65536-character review body limit for the largest valid review", () => {
+    // Every field at its schema maximum, full of characters that grow when escaped.
+    const hostile = (length: number) => "<>&".repeat(Math.ceil(length / 3)).slice(0, length);
+    const findings = Array.from({ length: 30 }, (_, i) => ({
+      severity: "blocker" as const,
+      file: hostile(200),
+      line: i + 1,
+      problem: hostile(1000),
+      suggestedFix: hostile(1000),
+    }));
+    const largest = review({ findings, summary: hostile(1000), scope: hostile(500) });
+    assert.equal(checkKnightReview(JSON.stringify(largest)).ok, true, "the fixture is a valid review");
+
+    const body = renderReviewBody(largest, 3);
+    assert.ok(body.length <= 65536, `body has ${String(body.length)} characters`);
+    assert.match(body, /\.\.\. \d+ more finding\(s\) in the review block\./);
+    const parsed = parseReviewBody(body);
+    assert.ok(parsed, "the machine block is still valid");
+    assert.equal(parsed.round, 3);
+    assert.equal(parsed.review.summary, largest.summary);
+    assert.deepEqual(
+      parsed.review.findings.map(({ severity, file, line }) => ({ severity, file, line })),
+      findings.map(({ severity, file, line }) => ({ severity, file, line })),
+    );
+    for (const finding of parsed.review.findings) {
+      const kept = finding.problem.replace(/\.\.\.$/, "");
+      assert.ok(kept.length > 0 && hostile(1000).startsWith(kept), "a shortened problem is the start of the original");
+    }
+  });
+
+  it("keeps the full findings in the block and leaves some out of the readable list when only the list is too long", () => {
+    const findings = Array.from({ length: 30 }, (_, i) => ({ ...MAJOR, line: i + 1, problem: "a".repeat(900), suggestedFix: "b".repeat(900) }));
+    const long = review({ findings });
+    const body = renderReviewBody(long, 0);
+    assert.ok(body.length <= 65536);
+    assert.deepEqual(parseReviewBody(body)?.review, long);
+    const listed = body.split("\n").filter((line) => line.startsWith("- **major**")).length;
+    assert.ok(listed > 0 && listed < 30, `listed ${String(listed)} findings`);
+    assert.ok(body.includes(`... ${String(30 - listed)} more finding(s) in the review block.`));
+  });
+
   it("returns null for bodies without a valid block", () => {
     assert.equal(parseReviewBody("Looks good to me"), null);
     assert.equal(parseReviewBody('<!-- shadowarmy:review {"round":1,"review":{"verdict":"approve"}} -->'), null);

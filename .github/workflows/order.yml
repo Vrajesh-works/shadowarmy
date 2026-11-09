@@ -188,6 +188,7 @@ jobs:
       issues: write
     outputs:
       knight: ${{ steps.deliver.outputs.knight }}
+      head_sha: ${{ steps.deliver.outputs.head_sha }}
     steps:
       - name: Check out engine
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -354,6 +355,8 @@ jobs:
           SHADOWARMY_SOLDIER_DIR: ${{ runner.temp }}/shadowarmy/soldier
           KNIGHT_JOB_RESULT: ${{ needs.knight.result }}
           CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          # The commit deliver pushed and the Knight reviewed.
+          REVIEWED_SHA: ${{ needs.deliver.outputs.head_sha }}
         run: node engine/src/cli/order.ts judge
 
   report-failure:

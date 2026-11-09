@@ -39,6 +39,8 @@ export interface JudgeInput {
   knightJob: string;
   /** github.workflow_ref of the Realm's caller workflow, for dispatching fix rounds. */
   workflowRef: string;
+  /** The commit deliver pushed and the Knight reviewed (needs.deliver.outputs.head_sha). */
+  reviewedSha: string;
   run: RunInfo;
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
@@ -121,7 +123,14 @@ export async function runJudge(input: JudgeInput): Promise<void> {
       `/repos/${repoPath(target)}/pulls/${String(pr)}`,
     );
     if (pull.head.ref !== state.branch) throw new StepFailure("review", `Pull request #${String(pr)} no longer uses ${state.branch}.`);
-    const head = pull.head.sha;
+    if (!/^[0-9a-f]{40}$/.test(input.reviewedSha)) throw new StepFailure("review", "The deliver job did not record the commit the Knight reviewed.");
+    if (pull.head.sha !== input.reviewedSha) {
+      throw new StepFailure(
+        "review",
+        `The task branch ${state.branch} moved to ${pull.head.sha} while the Knight reviewed ${input.reviewedSha}, so the review was not posted: someone else pushed to the branch.`,
+      );
+    }
+    const head = input.reviewedSha;
     const prLink: StatusLink = { label: `Pull request #${String(pr)}`, url: pull.html_url };
     const injection = review.injectionNoticed ? ["The Knight noticed instructions in its inputs and ignored them."] : [];
 

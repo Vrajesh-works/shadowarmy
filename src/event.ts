@@ -4,7 +4,7 @@
 //
 // Two events start an order run:
 //   issues.labeled     - the Monarch added a label (only `arise` counts).
-//   workflow_dispatch  - the engine (or the Monarch) continues an order, with
+//   workflow_dispatch  - the engine (github-actions[bot]) continues an order, with
 //                        the issue number as input; the issue itself is then
 //                        read from the API (see loadDispatchedIssue).
 

@@ -2,8 +2,8 @@
 //
 // Two triggers (src/event.ts):
 // - `arise` added by the Monarch starts the order from its first round.
-// - a workflow_dispatch from the engine (or the Monarch) runs the next fix
-//   round of an order that a judge job left in-progress.
+// - a workflow_dispatch from the engine (github-actions[bot]) runs the next
+//   fix round of an order that a judge job left in-progress.
 //
 // Order of checks (functional-diagrams/actions/single-task-order.md):
 // sender -> config valid -> state allows it -> order form valid -> target
@@ -109,9 +109,12 @@ export async function runGate(input: GateInput): Promise<GateOutput> {
   const config = loadRealmConfig(input.realmDir, realm);
   // Without a valid config the Monarch is the Realm owner (the documented default).
   const monarch = config.ok ? config.config.monarch : event.repository.owner;
-  // Fix rounds are dispatched by the engine itself with the Realm's GITHUB_TOKEN.
-  const allowed = sameLogin(event.sender, monarch) || (event.trigger === "dispatch" && event.sender === ACTIONS_BOT);
-  if (!allowed) {
+  // Fix rounds are dispatched only by the engine itself with the Realm's GITHUB_TOKEN.
+  if (event.trigger === "dispatch" && event.sender !== ACTIONS_BOT) {
+    log(`Ignored: a dispatch from ${event.sender}; only the engine (${ACTIONS_BOT}) starts fix rounds. Nothing was changed.`);
+    return STOP;
+  }
+  if (event.trigger === "label" && !sameLogin(event.sender, monarch)) {
     const why = config.ok ? `(${monarch}). Nothing was changed.` : "(shadowarmy.yml is invalid; the Realm owner is the Monarch).";
     log(`Ignored: ${event.sender} is not the Monarch ${why}`);
     return STOP;

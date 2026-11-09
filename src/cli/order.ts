@@ -118,7 +118,7 @@ async function main(command: string | undefined): Promise<void> {
         run,
         log,
       });
-      setOutputs({ knight: String(result.knight) });
+      setOutputs({ knight: String(result.knight), head_sha: result.headSha });
       return;
     }
     case "judge": {
@@ -131,6 +131,7 @@ async function main(command: string | undefined): Promise<void> {
         soldierDir: env("SHADOWARMY_SOLDIER_DIR"),
         knightJob: optional("KNIGHT_JOB_RESULT"),
         workflowRef: env("CALLER_WORKFLOW_REF"),
+        reviewedSha: optional("REVIEWED_SHA"),
         run,
         now: () => new Date(),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

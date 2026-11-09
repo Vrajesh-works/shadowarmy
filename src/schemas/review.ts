@@ -25,7 +25,7 @@ export interface KnightReview {
   injectionNoticed: boolean;
 }
 
-export const MAX_FINDINGS = 50;
+export const MAX_FINDINGS = 30;
 
 export const reviewSchema: SchemaObject = {
   type: "object",
@@ -33,7 +33,7 @@ export const reviewSchema: SchemaObject = {
   required: ["verdict", "scope", "findings", "summary", "injectionNoticed"],
   properties: {
     verdict: { type: "string", enum: ["approve", "changes"] },
-    scope: { type: "string", minLength: 1, maxLength: 1000 },
+    scope: { type: "string", minLength: 1, maxLength: 500 },
     findings: {
       type: "array",
       maxItems: MAX_FINDINGS,
@@ -43,14 +43,14 @@ export const reviewSchema: SchemaObject = {
         required: ["severity", "file", "line", "problem", "suggestedFix"],
         properties: {
           severity: { type: "string", enum: ["blocker", "major", "minor"] },
-          file: { type: "string", minLength: 1, maxLength: 500, pattern: "^[^\\r\\n]+$", description: "one repository-relative path" },
+          file: { type: "string", minLength: 1, maxLength: 200, pattern: "^[^\\r\\n]+$", description: "one repository-relative path" },
           line: { type: "integer", minimum: 1, nullable: true },
-          problem: { type: "string", minLength: 1, maxLength: 2000 },
-          suggestedFix: { type: "string", maxLength: 2000 },
+          problem: { type: "string", minLength: 1, maxLength: 1000 },
+          suggestedFix: { type: "string", maxLength: 1000 },
         },
       },
     },
-    summary: { type: "string", minLength: 1, maxLength: 2000 },
+    summary: { type: "string", minLength: 1, maxLength: 1000 },
     injectionNoticed: { type: "boolean" },
   },
 };

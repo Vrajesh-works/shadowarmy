@@ -65,9 +65,9 @@ export async function gatherFeedback(options: {
         "",
         `The Knight requested changes in round ${String(knight.round)}: ${knight.review.summary}`,
         "",
-        "Fix every finding below. Minor findings are optional.",
+        "Fix every finding below.",
         "",
-        renderFindings(knight.review.findings),
+        renderFindings(findings),
       ].join("\n"),
     );
   }

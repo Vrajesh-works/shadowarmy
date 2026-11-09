@@ -13,8 +13,8 @@ sequenceDiagram
   participant Realm as Realm issue
 
   Note over Gate,Realm: Round 0 starts from arise (see single-task order). A fix round starts from a dispatch.
-  opt fix round (workflow_dispatch from the judge, or the Monarch)
-    Gate->>Gate: Sender is the Monarch or github-actions[bot]; issue is in-progress with a PR and round >= 1
+  opt fix round (workflow_dispatch from the judge)
+    Gate->>Gate: Sender is github-actions[bot]; issue is in-progress with a PR and round >= 1
     Gate->>Target: Read PR head; Knight's latest review of that commit (author = engine account, valid review block); failed checks and log excerpts
     Gate->>Gate: feedback.md (blocker and major findings, failing checks)
     Gate->>Target: Fetch the task branch head (SHADOWARMY_GH_TOKEN)
@@ -28,6 +28,7 @@ sequenceDiagram
   Deliver->>Knight: Packed branch, diff from the first round's base commit, soldier-result.json
   Knight-->>Judge: review.json (untrusted)
   Judge->>Judge: Validate schema and that the verdict matches the findings
+  Judge->>Target: Check the PR head is still the commit deliver pushed (else failed at step "review", nothing posted)
   Judge->>Target: Post a comment-type PR review on the head commit, with a review block
   alt changes requested
     alt rounds left

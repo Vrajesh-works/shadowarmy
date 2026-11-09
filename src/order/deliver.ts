@@ -88,9 +88,11 @@ export function explainMissingResult(soldierDir: string, soldierJob: string, con
 /** Whether the change was pushed and the Knight's inputs are ready. */
 export interface DeliverOutput {
   knight: boolean;
+  /** The commit pushed to the task branch, which the Knight reviews; "" when nothing was pushed. */
+  headSha: string;
 }
 
-const NO_KNIGHT: DeliverOutput = { knight: false };
+const NO_KNIGHT: DeliverOutput = { knight: false, headSha: "" };
 
 export async function runDeliver(input: DeliverInput): Promise<DeliverOutput> {
   const { event, run } = input;
@@ -178,7 +180,7 @@ export async function runDeliver(input: DeliverInput): Promise<DeliverOutput> {
       },
       state,
     );
-    return { knight: true };
+    return { knight: true, headSha: delivered.head };
   } catch (error) {
     if (error instanceof StepFailure) {
       await reportFailure(issue, run, state, error.step, error.message);
@@ -198,6 +200,8 @@ interface Delivered {
   diff: string;
   /** The local checkout of the pushed branch. */
   dir: string;
+  /** The pushed commit. */
+  head: string;
 }
 
 async function deliverChange(
@@ -297,7 +301,8 @@ async function deliverChange(
   // The Knight reviews the whole change, not just this round's part.
   if (input.baseSha !== input.startSha) await run(["fetch", "--quiet", "--depth=1", "origin", input.baseSha], { auth: true });
   const diff = await run(["diff", "--binary", input.baseSha, "HEAD"]);
-  return { ...pull, notes, diff, dir };
+  const head = (await run(["rev-parse", "HEAD"])).trim();
+  return { ...pull, notes, diff, dir, head };
 }
 
 async function openOrUpdatePullRequest(

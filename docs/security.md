@@ -47,8 +47,8 @@ Within one job every step runs as the same user on the same machine. A process t
 - `soldier` holds only the Claude credential. It unpacks the checkout the gate job made; the workflow never references `SHADOWARMY_GH_TOKEN` in this job. Its `GITHUB_TOKEN` has no permissions.
 - `deliver` runs on a fresh runner, re-validates everything the soldier job uploaded, fetches the commit the gate job recorded and applies the patch there, so the diff guard sees exactly what will be pushed. It then packs the pushed branch and the full diff for the Knight.
 - `knight` (milestone 2) is built like `soldier`: only the Claude credential, no GitHub permissions, a packed checkout instead of a fetch. Its edits are discarded and its review is untrusted.
-- `judge` runs on a fresh runner, validates `review.json` (schema, and a verdict that matches its findings) before posting anything, and is the only job allowed to dispatch the next round.
-- A fix round's feedback is rebuilt from GitHub, and a review only counts when it carries a valid review block, was posted by the account behind `SHADOWARMY_GH_TOKEN` and reviews the pull request's head commit, so other people's reviews cannot steer the Soldier. Dispatches from anyone but the Monarch or the engine change nothing ([decision 36](decisions.md)).
+- `judge` runs on a fresh runner, validates `review.json` (schema, and a verdict that matches its findings) and checks that the pull request head is still the commit deliver pushed for the Knight before posting anything, and is the only job allowed to dispatch the next round.
+- A fix round's feedback is rebuilt from GitHub, and a review only counts when it carries a valid review block, was posted by the account behind `SHADOWARMY_GH_TOKEN` and reviews the pull request's head commit, so other people's reviews cannot steer the Soldier. Dispatches from anyone but the engine, the Monarch included, change nothing ([decision 36](decisions.md)).
 
 ## Rules For Implementers
 
