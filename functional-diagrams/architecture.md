@@ -2,7 +2,7 @@
 
 Maintenance note: whenever the architecture, workflows, data model or repository layout changes, update this file in the same change.
 
-Status: agreed design, November 8, 2026. Only the milestone 0 modules marked "exists" in the engine layout below are implemented; no workflow that runs an order exists yet.
+Status: agreed design, November 8, 2026, updated November 9, 2026. The parts marked "exists" in the engine layout below are implemented: the milestone 0 modules and the milestone 1 single-task order workflow (Soldier only, no Knight or CI wait yet).
 
 ## Summary
 
@@ -72,28 +72,40 @@ flowchart TB
 
 | Reusable workflow | Triggered by (in the Realm) | Jobs |
 | --- | --- | --- |
-| `order.yml` | `issues: labeled` with `arise`; dispatch from `command.yml` and `sentinel.yml` | `gate` (actor, config, limits) then `work` (Soldier, push, PR, Knight, fix rounds, CI wait, report) |
+| `order.yml` | `issues: labeled` with `arise`; dispatch from `command.yml` and `sentinel.yml` | `gate` (actor, config, form, target, credentials, daily cap, inputs), `soldier` (agent only), `deliver` (validate, apply, diff guard, push, PR, labels; later Knight, fix rounds, CI wait), `report-failure` (safety net) |
 | `plan.yml` | dispatch from `order.yml` for multi-task and New project orders | `plan` (Marshal, validate, render, request approval) |
 | `command.yml` | `issue_comment: created` | `command` (actor check, parse command, act or dispatch) |
 | `sentinel.yml` | `schedule`, `workflow_dispatch` | `patrol` (reconcile, resume, stuck detection, dispatch, report) |
 
 Dispatch between workflows uses `workflow_dispatch` through the Realm's `GITHUB_TOKEN`, with the issue number as input. Every job that touches one issue uses the concurrency group `shadowarmy-<issue>`.
 
-## Inside The `work` Job
+## Jobs Of `order.yml`
+
+Implemented in milestone 1 up to `ready-to-merge` without the Knight; the dashed edge leads to the steps that arrive in milestone 2. The agent runs in its own job so it never shares a runner with the GitHub write token ([decision 23](../docs/decisions.md)).
 
 ```mermaid
 flowchart TB
-  A[Load config and state block] --> B[Checkout target<br/>persist-credentials false]
-  B --> C[Assemble input files]
-  C --> D[Soldier agent step]
-  D --> E{result.json valid?}
+  subgraph gate[gate job: Realm token]
+    A[Actor check, config, order form, target, secrets, daily cap] --> C[Assemble input files]
+  end
+  subgraph soldier[soldier job: Claude credential only, no GitHub permissions]
+    B[Checkout target at base<br/>persist-credentials false] --> D[Soldier agent step]
+    D --> P[Collect patch and result]
+  end
+  subgraph deliver[deliver job: Realm token + SHADOWARMY_GH_TOKEN]
+    E{result.json valid?}
+  end
+  C -- artifact --> B
+  P -- artifact, untrusted --> E
   E -- no --> F[failed]
   E -- blocked --> G[needs-decision]
-  E -- done --> H[Diff guard]
+  E -- done --> R[Fetch base commit, apply patch]
+  R --> H[Diff guard]
   H -- reject --> F
   H -- ok --> I[Commit and push shadowarmy/* branch]
   I --> J[Open or update PR]
-  J --> K[Knight agent step]
+  J -- milestone 1 --> O
+  J -.-> K[Knight agent step]
   K --> L{verdict}
   L -- changes and rounds left --> C
   L -- changes and no rounds --> G
@@ -105,20 +117,22 @@ flowchart TB
 
 ## Repository Layouts
 
-Engine ("exists" marks what milestone 0 built; everything else is planned):
+Engine ("exists" marks what is built; everything else is planned):
 
 ```text
 shadowarmy/
-  .github/workflows/      ci.yml (engine's own CI, exists); order.yml, plan.yml, command.yml, sentinel.yml (reusable)
-  roles/                  marshal.md, soldier.md, knight.md, scout.md
-  scripts/                dev-only lint helpers (exists): check-workflow-expressions.ts, lint-shell.sh
+  .github/workflows/      ci.yml, order.yml (exist); plan.yml, command.yml, sentinel.yml (reusable)
+  roles/                  soldier.md (exists); marshal.md, knight.md, scout.md
+  scripts/                check-workflow-expressions.ts, lint-shell.sh (dev-only lint helpers), fake-agent.sh (test Realms) (exist)
   src/
-    cli/                  init, doctor, protect
-    schemas/              config.ts, state.ts (exist); plan, result, review, scout
+    cli/                  order.ts (exists: gate, deliver, fail); init, doctor, protect
+    order/                context.ts gate.ts deliver.ts fail.ts (exist)
+    schemas/              config.ts, state.ts, result.ts (exist); plan, review, scout
     config.ts issueForm.ts labels.ts statusComment.ts names.ts schema.ts (exist)
-    git.ts pr.ts diffGuard.ts limits.ts sentinel.ts
-  template/               Realm skeleton (see below)
-  tests/                  unit tests and fixtures (exist)
+    github.ts git.ts realmIssue.ts event.ts inputs.ts diffGuard.ts limits.ts prBody.ts soldierResult.ts (exist)
+    sentinel.ts
+  template/               Realm skeleton (exists: order caller, Order form, shadowarmy.yml, rules, projects, README)
+  tests/                  unit tests, helpers and fixtures (exist)
   docs/  functional-diagrams/
 ```
 

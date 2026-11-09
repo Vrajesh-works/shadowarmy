@@ -1,6 +1,6 @@
 # Security
 
-Updated November 8, 2026. Status: agreed. Implemented so far (milestone 0): the custom workflow lint that rejects `${{ }}` in `run:` scripts (`scripts/check-workflow-expressions.ts`, run by engine CI), full-SHA pinning of third-party actions in the engine CI, schema validation of the state block with length caps, and escaping of untrusted text in status comments. Every other safeguard below is a requirement for the milestone that introduces the affected component.
+Updated November 9, 2026. Status: agreed. Implemented in milestone 1: the actor check on `arise`, the diff guard, the job split that keeps the GitHub write token off the agent's runner ([decision 23](decisions.md)), the agent job with `permissions: {}` and only the Claude credential, `persist-credentials: false` checkouts, `--safe-mode` so target repository configuration does not load into the agent, schema validation and size caps on `result.json`, push only to `shadowarmy/*` branches with a lease, git authentication through environment variables instead of command lines or `.git/config`, redaction of the Claude credential from the uploaded agent summary, and the status comment author check. Implemented in milestone 0: the custom workflow lint that rejects `${{ }}` in `run:` scripts (`scripts/check-workflow-expressions.ts`, run by engine CI), full-SHA pinning of third-party actions in the engine CI, schema validation of the state block with length caps, and escaping of untrusted text in status comments. Every other safeguard below is a requirement for the milestone that introduces the affected component.
 
 shadowarmy runs AI agents with write access to code, unattended, on text that may come from other people. The design assumes agents can be confused or manipulated and limits what a confused agent can do.
 
@@ -38,6 +38,13 @@ shadowarmy runs AI agents with write access to code, unattended, on text that ma
 | Runaway cost | Turn limits, job timeouts, fix-round caps, concurrency caps, daily run cap |
 | Stale or over-scoped GitHub token | Fine-grained token limited to chosen repositories; expiry warning; GitHub App option later |
 | Realm state tampering | State lives in labels and engine-authored comments; the state block is schema-validated and only engine-authored comments are read (author check) |
+
+## Why The Agent Gets Its Own Job
+
+Within one job every step runs as the same user on the same machine. A process the agent starts and leaves running could read the environment of a later step (for example the push step's token) from `/proc`, or change the engine's files before a later step runs them. The order workflow therefore runs the agent in its own job on its own runner:
+
+- `soldier` holds the Claude credential and a read checkout made with `SHADOWARMY_GH_TOKEN` before the agent starts (`persist-credentials: false`, so nothing remains on disk). Its `GITHUB_TOKEN` has no permissions.
+- `deliver` runs on a fresh runner, re-validates everything the soldier job uploaded, fetches the base commit itself and applies the patch there, so the diff guard sees exactly what will be pushed.
 
 ## Rules For Implementers
 

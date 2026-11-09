@@ -65,3 +65,27 @@ export function isTimeZone(value: string): boolean {
     return false;
   }
 }
+
+/**
+ * The task branch for a Realm issue: `shadowarmy/<issue>-<slug>`, where the slug
+ * is the title in lowercase ASCII words joined by hyphens, at most 40 characters,
+ * or `task` when the title has no usable characters.
+ */
+export function taskBranchName(issue: number, title: string): string {
+  const words = title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((word) => word !== "");
+  let slug = "";
+  for (const word of words) {
+    const next = slug === "" ? word : `${slug}-${word}`;
+    if (next.length > 40) break;
+    slug = next;
+  }
+  if (slug === "") slug = (words[0] ?? "task").slice(0, 40) || "task";
+  return `shadowarmy/${String(issue)}-${slug}`;
+}

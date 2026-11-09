@@ -24,6 +24,8 @@ Goal: an order in a Realm becomes a pull request in a clean target repository.
 - Manual Realm setup documented (no CLI yet).
 - Spikes resolved and recorded in [decisions](decisions.md): Claude Code headless flags, credential option, engine checkout ref inside a reusable workflow.
 
+Status: implemented (spikes are decisions 20-22); done once the acceptance runs below are recorded on the sandbox Realm in the milestone's pull request.
+
 Acceptance:
 - Monarch adds `arise` to an order on the sandbox Realm; a pull request appears in the sandbox target with the requested change; the target repository contains no shadowarmy files.
 - `arise` added by a second account does nothing.

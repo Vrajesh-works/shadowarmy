@@ -2,7 +2,7 @@
 
 Updated November 8, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
 
-Milestone 0 added the deterministic building blocks for sections 4 and 5 as library code with unit tests. No workflow calls them yet, so no rule below is implemented end to end on GitHub.
+Milestone 0 added the deterministic building blocks for sections 4 and 5. Milestone 1 added the single-task order workflow (`.github/workflows/order.yml`, `src/order/`), which uses them. "End to end: pending" marks a rule whose implementation has not yet been proven by a recorded run on the sandbox Realm.
 
 Read [the root instructions](../AGENTS.md) before editing. Implementation work does not authorize changing a rule here. Resolve contradictions or missing decisions explicitly, record them in [decisions](decisions.md) and update affected docs and diagrams in the same pull request.
 
@@ -45,7 +45,7 @@ Agreed November 8, 2026.
 
 ## 4. Lifecycle And Labels
 
-Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a workflow: the label set, the transition table and the single-state label writer are `src/labels.ts`, covered by `tests/labels.test.ts` (which also checks the table below against the code).
+Agreed November 8, 2026. Implemented in milestone 0 and used by the order workflow since milestone 1: the label set, the transition table and the single-state label writer are `src/labels.ts`, covered by `tests/labels.test.ts` (which also checks the table below against the code).
 
 Labels are the source of truth for state. Exactly one state label is present on an order or task at any time; the engine's label writer enforces this by removing every other state label in the same API call that adds the new one.
 
@@ -86,7 +86,7 @@ A multi-task order's own state is derived by the Sentinel from its tasks: `in-pr
 
 ## 5. The Status Comment
 
-Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a workflow: rendering, parsing and the state block schema are `src/statusComment.ts` and `src/schemas/state.ts`, covered by `tests/statusComment.test.ts`. Finding the comment and checking its author arrive with the first workflow (milestone 1).
+Agreed November 8, 2026. Implemented in milestone 0 and used by the order workflow since milestone 1: rendering, parsing and the state block schema are `src/statusComment.ts` and `src/schemas/state.ts`, covered by `tests/statusComment.test.ts`. `src/realmIssue.ts` finds the status comment and trusts only comments written by `github-actions[bot]` (the Realm's `GITHUB_TOKEN`).
 
 - Each order and task has exactly one status comment, written by the engine and edited in place. It starts with `<!-- shadowarmy:status -->`.
 - It ends with a machine block `<!-- shadowarmy:state {JSON} -->`. The JSON is validated against a schema on every read; an unreadable block is reported as `failed` with the reason, never guessed.
@@ -99,7 +99,7 @@ Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a w
 
 ## 6. Monarch Authority And Commands
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. The `arise` trigger and its actor check are implemented in milestone 1 (`src/order/gate.ts`, `tests/order.test.ts`; end to end: pending). Comment commands arrive in milestone 3. Until then, re-adding `arise` retries a `failed` order and continues a `needs-decision` one after the Monarch edits the task ([decision 26](decisions.md)).
 
 - The Monarch is the login in `monarch:` in `shadowarmy.yml`, defaulting to the Realm owner. Triggers and commands from any other account are ignored and logged in the run summary, never acted on.
 - Labels: adding `arise` starts an order. Only label events whose `sender` is the Monarch count.
@@ -115,7 +115,7 @@ Agreed November 8, 2026.
 
 ## 7. Clean Project Rule
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Implemented in milestone 1: the diff guard is `src/diffGuard.ts`, run by the `deliver` job on a fresh checkout (`tests/diffGuard.test.ts`, `tests/order.test.ts`; end to end: pending). A protected path counts as explicitly requested when the order text names that exact path (or `.github/workflows` for workflow files), not as the tail of a longer path. Submodule changes are always rejected. The pull request body and commit message are rendered by `src/prBody.ts`.
 
 - The diff guard runs before every push. It rejects the push and fails the task when the diff adds or modifies any of: `.shadowarmy/`, `.github/workflows/` (unless the order text explicitly asks for CI changes), `CLAUDE.md`, `AGENTS.md`, `.claude/`, files containing the status or state markers, or any file over the configured size limit (default 5 MB).
 - Exception: the order text explicitly asks to create or edit one of those paths, and the Marshal's plan or the order names the path. The exception is recorded in the status comment.
@@ -126,7 +126,7 @@ Agreed November 8, 2026.
 
 ## 8. Soldier Runs
 
-Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract.
+Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract. Implemented in milestone 1 (end to end: pending). The Soldier runs in its own job, which holds only the Claude credential and a read checkout of the target and whose `GITHUB_TOKEN` has no permissions; its outputs are re-validated in the separate `deliver` job ([decision 23](decisions.md)).
 
 - One Soldier run implements one task in a fresh checkout of the target repository at the head of its default branch (or the existing task branch on fix rounds).
 - The checkout uses `persist-credentials: false`. The agent step's environment contains only its Claude credential, the task files and the toolchain. It has no GitHub token.
@@ -158,7 +158,7 @@ Agreed November 8, 2026.
 
 ## 11. Failure, Retry And Recovery
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Milestone 1 implements failure reporting: every refused or failed step moves the order to `failed` with the step, the reason and the run link, and a `report-failure` job marks a still-running order `failed` if a job crashed before reporting (end to end: pending). `/retry`, stuck detection and automatic retries arrive in milestone 3.
 
 - Any step failure moves the task to `failed` with the step name, a short reason and the run link. Agent output that does not parse is a failure, not a guess.
 - `/retry` restarts from the last safe point recorded in the state block: if a branch and pull request exist, it starts a fix round with the previous failure as input; otherwise it starts a fresh Soldier run.
@@ -205,7 +205,7 @@ Agreed November 8, 2026. Arrives in milestone 5.
 
 ## 16. Limits And Cost
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Milestone 1 enforces `max_turns`, `run_timeout_minutes` (the soldier job's timeout) and the daily cap (`src/limits.ts`, counted from the Realm's own run history, [decision 28](decisions.md)); reaching the cap moves the order to `queued` (end to end: pending).
 
 - Required limits with defaults: `max_turns` 150, `run_timeout_minutes` 45, `max_fix_rounds` 3, `max_concurrent_soldiers` 3, `max_runs_per_day` 30, `ci.max_wait_minutes` 120.
 - A run is any workflow job that starts an agent. The daily count resets at 00:00 in `timezone` (default UTC).
@@ -226,12 +226,12 @@ Agreed November 8, 2026.
 
 When implemented, each of these needs an automated test (unit or end-to-end) named in this section:
 
-- Commands and `arise` from a non-Monarch account change nothing.
+- Commands and `arise` from a non-Monarch account change nothing. Unit: `tests/order.test.ts` ("changes nothing for arise from any account other than the Monarch"). End to end: pending.
 - Exactly one state label after every transition, including concurrent events. Unit: `tests/labels.test.ts` ("leaves exactly one state label after every allowed transition", "keeps one state label when two events race on the same issue"). End to end: pending (milestone 1).
-- The diff guard rejects every forbidden path and accepts an explicit, recorded exception.
-- The agent step's environment contains no GitHub token, and the checkout has no persisted credentials.
+- The diff guard rejects every forbidden path and accepts an explicit, recorded exception. Unit: `tests/diffGuard.test.ts`, `tests/order.test.ts` ("rejects an unrequested CLAUDE.md edit...", "allows CLAUDE.md when the order names it"). End to end: pending.
+- The agent step's environment contains no GitHub token, and the checkout has no persisted credentials. Structure: the soldier job has `permissions: {}`, receives only the Claude secrets, and checks out with `persist-credentials: false` (`.github/workflows/order.yml`). End to end: pending.
 - Issue text containing shell metacharacters and `${{ }}` sequences never executes. Unit: `tests/issueForm.test.ts` ("keeps shell metacharacters, expressions and fake markers as inert data"); workflow lint: `scripts/check-workflow-expressions.ts` fails CI on any `${{ }}` inside a `run:` script (`tests/workflowExpressions.test.ts`). End to end: pending (milestone 1).
-- An unparsable agent result file produces `failed`, not `done`.
+- An unparsable agent result file produces `failed`, not `done`. Unit: `tests/soldierResult.test.ts`, `tests/order.test.ts` ("fails on an unparsable or missing result"). End to end: pending.
 - `/retry` after a failure with an existing pull request reuses the branch.
 - Fix rounds stop at the limit and produce `needs-decision`.
 - The Sentinel turns a merged pull request into `done` and a closed one into `dismissed`.

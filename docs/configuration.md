@@ -1,6 +1,6 @@
 # Configuration
 
-Updated November 8, 2026. Status: the `shadowarmy.yml` schema, defaults and validation, the label definitions and the issue form parser are implemented as library code (milestone 0) and not yet used by a workflow. Keys and defaults here are the contract for `src/config.ts` and `src/schemas/config.ts`; `tests/config.test.ts` checks that the example below parses to exactly the defaults in code.
+Updated November 9, 2026. Status: the `shadowarmy.yml` schema, defaults and validation, the label definitions and the issue form parser are implemented (milestone 0) and used by the order workflow (milestone 1). The Realm skeleton is `template/`; [Realm setup](realm-setup.md) describes the manual setup. Keys and defaults here are the contract for `src/config.ts` and `src/schemas/config.ts`; `tests/config.test.ts` checks that the example below parses to exactly the defaults in code.
 
 ## `shadowarmy.yml`
 
@@ -86,7 +86,13 @@ Fine-grained tokens expire. The Sentinel warns in the Realm report 7 days before
 
 Later version: a GitHub App the Monarch creates from a manifest during `init`, installed on chosen repositories, with tokens minted per run. This removes long-lived tokens but cannot create repositories on a personal account.
 
-The Realm's own `GITHUB_TOKEN` is used for everything inside the Realm (labels, comments, issues). Caller workflows grant it `issues: write`, `contents: read` and `pull-requests: write`.
+The Realm's own `GITHUB_TOKEN` is used for everything inside the Realm (labels, comments, issues). The order caller workflow grants it `contents: read` (read `shadowarmy.yml`, rules and notes), `issues: write` (labels and status comment) and `actions: read` (count today's agent runs for the daily cap). Later workflows that open Realm pull requests add `pull-requests: write`.
+
+## Variables (Realm repository variables)
+
+| Variable | Purpose |
+| --- | --- |
+| `SHADOWARMY_FAKE_AGENT` | Test Realms only. Replaces the Soldier with a canned scenario from `scripts/fake-agent.sh` (`add-file`, `edit-claude-md`, `no-changes`, `blocked`, `invalid-result`) so the rest of the pipeline can be tested repeatably. Unknown values fail the order. Leave unset in a real Realm. |
 
 ## Labels
 
@@ -145,15 +151,15 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: write
+  actions: read
 concurrency:
   group: shadowarmy-${{ github.event.issue.number }}
   cancel-in-progress: false
 jobs:
   order:
     if: github.event.label.name == 'arise'
-    uses: shadowarmy/shadowarmy/.github/workflows/order.yml@v1
+    uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
     secrets: inherit
 ```
 
-The engine's reusable workflow re-checks the sender against `monarch` itself; the `if:` above is only a cheap filter. The engine path (`shadowarmy/shadowarmy`) is a placeholder until the repository exists.
+The engine's reusable workflow re-checks the sender against `monarch` itself; the `if:` above is only a cheap filter. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).

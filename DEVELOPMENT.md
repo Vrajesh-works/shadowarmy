@@ -1,6 +1,6 @@
 # Development
 
-Updated November 8, 2026 (milestone 0). The commands below work today; the sandbox and Realm sections apply from milestone 1.
+Updated November 9, 2026 (milestone 1).
 
 ## Prerequisites
 
@@ -48,12 +48,12 @@ Rules for sandbox runs:
 
 ## Manual Realm Setup (Until `init` Exists)
 
-1. Create the private sandbox Realm repository.
-2. Copy `template/` into it and edit `shadowarmy.yml` (`monarch`, `targets`).
-3. Point the caller workflows at your engine branch.
-4. Create the labels listed in [configuration](docs/configuration.md#labels) (`gh label create ... --repo`).
-5. Add secrets: `gh secret set SHADOWARMY_GH_TOKEN --repo <realm>` and `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <realm>` (or `ANTHROPIC_API_KEY`).
-6. Open an Order issue targeting `shadowarmy-sandbox-node` and add `arise`.
+Follow [Realm setup](docs/realm-setup.md) for the sandbox Realm, with these differences:
+
+- Point `.github/workflows/order.yml` at your engine branch: `uses: <you>/shadowarmy/.github/workflows/order.yml@<branch>`. The engine repository must be public (or allow access from your repositories) for a Realm to call it.
+- Allow only the sandbox targets in `targets`, and use a fine-grained token limited to them.
+- Set the repository variable `SHADOWARMY_FAKE_AGENT` to a scenario (`gh variable set SHADOWARMY_FAKE_AGENT --body edit-claude-md --repo <realm>`) to run the pipeline with a canned Soldier, and delete it (`gh variable delete SHADOWARMY_FAKE_AGENT --repo <realm>`) to use Claude.
+- Add the second "outsider" account as a collaborator with Triage access so it can add labels.
 
 ## Testing Strategy
 

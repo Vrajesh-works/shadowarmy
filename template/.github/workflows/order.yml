@@ -1,0 +1,22 @@
+name: shadowarmy order
+
+# Thin caller: declares the trigger and permissions, then hands over to the
+# engine. The engine checks again that the sender is the Monarch.
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: shadowarmy-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  order:
+    if: github.event.label.name == 'arise'
+    uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
+    secrets: inherit

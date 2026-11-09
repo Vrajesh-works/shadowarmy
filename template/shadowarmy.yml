@@ -1,0 +1,44 @@
+# shadowarmy Realm configuration. Reference: docs/configuration.md in the engine.
+version: 1
+
+# The only human authority. Defaults to the Realm owner.
+monarch: your-github-login
+
+# Repositories the army may work on. Orders for anything else are refused.
+# Use "owner/*" to allow every repository of an owner.
+targets:
+  - your-github-login/*
+
+approval:
+  plan: multi-task          # always | multi-task | never (New project orders always need approval)
+
+limits:
+  max_turns: 150            # per agent run
+  run_timeout_minutes: 45   # per job
+  max_fix_rounds: 3         # per task, Knight + Scout + CI rounds combined
+  max_concurrent_soldiers: 3
+  max_runs_per_day: 30
+  max_file_size_mb: 5       # diff guard
+
+ci:
+  wait_minutes_in_job: 15
+  max_wait_minutes: 120
+  log_excerpt_lines: 200
+
+sentinel:
+  interval_minutes: 15      # also set the cron in .github/workflows/sentinel.yml
+
+roles:
+  marshal: { model: opus }
+  soldier: { model: sonnet }
+  knight:  { model: opus }
+  scout:   { enabled: false, model: sonnet }
+
+git:
+  author: "shadowarmy <shadowarmy@users.noreply.github.com>"
+
+pr:
+  draft: false              # open pull requests as drafts
+  link_realm: false         # include a link to the Realm issue in PR bodies
+
+timezone: UTC               # daily cap reset
