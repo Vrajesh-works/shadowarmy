@@ -5,6 +5,7 @@ import {
   isRepoFullName,
   isRepoName,
   isSafeBranchName,
+  isTargetPattern,
   isTaskBranch,
   isTimeZone,
   isUtcDateTime,
@@ -26,6 +27,14 @@ describe("names", () => {
 
   it("isRepoFullName", () => {
     check(isRepoFullName, ["owner/repo", "Owner/My.Repo"], ["owner", "owner/", "/repo", "a/b/c", "owner/*", "-o/r"]);
+  });
+
+  it("isTargetPattern", () => {
+    check(
+      isTargetPattern,
+      ["owner/repo", "Owner/My.Repo", "owner/*"],
+      ["owner", "owner/", "/repo", "/*", "a/b/c", "owner/*/x", "-o/r", "owner/re*", "owner/..", "owner/x.git"],
+    );
   });
 
   it("isSafeBranchName", () => {

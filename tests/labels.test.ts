@@ -76,6 +76,13 @@ describe("transition table", () => {
     assert.ok(!canTransition("in-progress", "done"));
     assert.ok(!canTransition("arise", "ready-to-merge"));
   });
+
+  it("covers the designed paths of later milestones", () => {
+    assert.ok(canTransition("in-progress", "ready-to-merge"), "milestone 1 has no Knight");
+    assert.ok(canTransition("planning", "in-progress"), "single-task plan dispatched without approval");
+    assert.ok(canTransition("planning", "queued"), "single-task plan dispatched without capacity");
+    assert.ok(canTransition("failed", "planning"), "/retry after the Marshal failed");
+  });
 });
 
 describe("label definitions", () => {
@@ -195,6 +202,27 @@ describe("setState", () => {
     const issue = new FakeIssue(["queued", "in-progress", "order"]);
     assert.deepEqual(await setState(issue, 9, "failed"), { from: null, to: "failed", changed: true });
     assert.deepEqual(issue.labels, ["order", "failed"]);
+  });
+
+  it("writes a derived order state the table does not list, as one single-state write", async () => {
+    const issue = new FakeIssue(["order", "ready-to-merge", "arise"]);
+    await assert.rejects(setState(issue, 5, "needs-decision"), TransitionError);
+    assert.deepEqual(await setState(issue, 5, "needs-decision", { derived: true }), {
+      from: "ready-to-merge",
+      to: "needs-decision",
+      changed: true,
+    });
+    assert.deepEqual(issue.writes, [["order", "needs-decision"]]);
+  });
+
+  it("never leaves a final state, even when derived", async () => {
+    const issue = new FakeIssue(["order", "done"]);
+    await assert.rejects(setState(issue, 5, "in-progress", { derived: true }), /cannot move from done to in-progress/);
+    assert.deepEqual(issue.writes, []);
+  });
+
+  it("repairs two state labels only by failing or dismissing, even when derived", async () => {
+    await assert.rejects(setState(new FakeIssue(["queued", "done"]), 9, "in-progress", { derived: true }), /only failed or dismissed/);
   });
 
   it("keeps one state label when two events race on the same issue", async () => {

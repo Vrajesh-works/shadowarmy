@@ -100,6 +100,76 @@ describe("renderStatusComment", () => {
   });
 });
 
+describe("status comment size", () => {
+  // GitHub rejects comment bodies over 65536 characters (HTTP 422).
+  const GITHUB_LIMIT = 65536;
+  // `&` is the character that grows most when escaped (to `&amp;`), and `<` most inside the state block (`<`).
+  const hostile = (length: number): string => "&".repeat(length);
+  const huge = Number.MAX_VALUE;
+
+  /** The longest state block the schema accepts. */
+  const largest = state({
+    kind: "new-project",
+    target: `${"o".repeat(39)}/${"r".repeat(100)}`,
+    base: "b".repeat(255),
+    branch: `shadowarmy/1-${"s".repeat(87)}`,
+    pr: huge,
+    round: 100,
+    runs: Array.from({ length: 200 }, () => ({ role: "soldier" as const, runId: huge, conclusion: "action_required" as const })),
+    ciWaitStartedAt: "2026-11-08T12:34:56.123456789Z",
+    lastError: "<".repeat(4000),
+    parent: huge,
+    dependsOn: Array.from({ length: 100 }, (_, i) => huge - i * 2 ** 971),
+  });
+
+  const maximal: StatusView = {
+    state: "needs-decision",
+    summary: hostile(5000),
+    details: Array.from({ length: 60 }, () => hostile(2000)),
+    question: hostile(5000),
+    links: Array.from({ length: 10 }, (_, i) => ({
+      label: hostile(200),
+      url: `https://github.com/${String(i)}/${"u".repeat(1000 - 21)}`,
+    })),
+  };
+
+  it("stays within GitHub's limit with the largest state block and hostile text, and still parses", () => {
+    const body = renderStatusComment(maximal, largest);
+    assert.ok(body.length <= GITHUB_LIMIT, `rendered ${String(body.length)} characters`);
+    assert.deepEqual(parsed(body), largest);
+    assert.ok(body.includes(`**Needs your decision**: ${"&amp;".repeat(1000)}... (truncated)`), "the summary is kept whole");
+    for (const link of maximal.links ?? []) assert.ok(body.includes(`](${link.url})`), "every link is kept");
+  });
+
+  it("drops details from the end before truncating the question", () => {
+    const body = renderStatusComment({ ...maximal, details: Array.from({ length: 50 }, (_, i) => `detail ${String(i)}`) }, state());
+    assert.ok(body.length <= GITHUB_LIMIT);
+    assert.ok(body.includes(`> ${"&amp;".repeat(4000)}... (truncated)`), "the question is shown up to its own limit");
+    assert.ok(body.includes("- detail 0\n"), "details that fit are kept");
+
+    const crowded = renderStatusComment(maximal, state());
+    assert.ok(crowded.length <= GITHUB_LIMIT, `rendered ${String(crowded.length)} characters`);
+    assert.match(crowded, /\n- \.\.\. \d+ more not shown\n/);
+    assert.ok(crowded.includes(`> ${"&amp;".repeat(4000)}... (truncated)`), "the question wins over details");
+  });
+
+  it("truncates the question when even no details leave too little room", () => {
+    const body = renderStatusComment(maximal, largest);
+    assert.ok(!body.includes("&amp;".repeat(4000)), "the question is cut further");
+    assert.match(body, /\*\*Question for the Monarch:\*\*\n\n> (&amp;)+\.\.\. \(truncated\)/);
+  });
+
+  it("refuses link URLs longer than 1000 characters", () => {
+    const url = `https://x.test/${"a".repeat(1000)}`;
+    assert.throws(() => renderStatusComment({ ...view, links: [{ label: "x", url }] }, state()), /longer than 1000/);
+  });
+
+  it("rejects state blocks with more than 200 runs", () => {
+    const runs = Array.from({ length: 201 }, () => ({ role: "soldier" as const, runId: 1, conclusion: null }));
+    assert.throws(() => renderStatusComment(view, state({ runs })), /runs: must NOT have more than 200 items/);
+  });
+});
+
 describe("untrusted text in the status comment", () => {
   const hostile = 'Done <!-- shadowarmy:state {"version":1} --> <img src=x onerror=alert(1)> @someone & more';
 

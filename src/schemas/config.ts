@@ -55,7 +55,7 @@ export const configSchema: JSONSchemaType<RawConfig> = {
     version: { type: "integer", const: 1 },
     monarch: {
       type: "string",
-      pattern: "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$",
+      format: "login",
       description: "a GitHub login",
       nullable: true,
     },
@@ -65,7 +65,7 @@ export const configSchema: JSONSchemaType<RawConfig> = {
       uniqueItems: true,
       items: {
         type: "string",
-        pattern: "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}/(?:\\*|[A-Za-z0-9._-]{1,100})$",
+        format: "target-pattern",
         description: "\"owner/name\" or \"owner/*\"",
       },
     },

@@ -69,20 +69,20 @@ Transitions:
 ```text
 arise -> queued | planning | in-progress
 queued -> planning | in-progress
-planning -> needs-decision (plan posted) | failed
+planning -> needs-decision (plan posted) | in-progress | queued (single-task plan dispatched without approval) | failed
 needs-decision -> planning (after /answer to a Marshal question) | in-progress | queued (after /approve or /answer) | dismissed
-in-progress -> in-review | needs-decision (Soldier blocked) | failed
+in-progress -> in-review | ready-to-merge (milestone 1 only, before the Knight exists; milestone 2 removes it) | needs-decision (Soldier blocked) | failed
 in-review -> in-progress (fix round) | waiting-ci | ready-to-merge | needs-decision (fix rounds used up) | failed
 waiting-ci -> in-review (CI failed, fix round) | ready-to-merge | needs-decision (CI wait limit)
 ready-to-merge -> done (merged) | in-review (Monarch requested changes on the PR) | dismissed (PR closed unmerged)
-failed -> queued | in-progress (after /retry)
+failed -> planning | queued | in-progress (after /retry)
 any non-final state -> failed (a step failed, section 11)
 any non-final state -> dismissed (after /dismiss)
 ```
 
 "Any non-final state" includes a fresh order that only carries `arise`; `done` and `dismissed` are final. Moving to the state an issue already has is not a transition: the writer only removes a leftover `arise`. An issue that somehow carries two state labels can only be repaired by moving it to `failed` or `dismissed`.
 
-A multi-task order's own state is derived by the Sentinel from its tasks: `in-progress` while any task is active, `needs-decision` while any task needs the Monarch, `ready-to-merge` when all open tasks are ready, `done` when all tasks are done, `failed` only when a task failed and nothing else is active.
+A multi-task order's own state is derived by the Sentinel from its tasks: `in-progress` while any task is active, `needs-decision` while any task needs the Monarch, `ready-to-merge` when all open tasks are ready, `done` when all tasks are done, `failed` only when a task failed and nothing else is active. Because this state follows the tasks rather than a step of the order, the table above does not apply to it: the Sentinel writes it with the label writer's derived mode, which skips the table but still writes exactly one state label in one call, removes `arise` and never leaves a final state.
 
 ## 5. The Status Comment
 
@@ -90,9 +90,10 @@ Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a w
 
 - Each order and task has exactly one status comment, written by the engine and edited in place. It starts with `<!-- shadowarmy:status -->`.
 - It ends with a machine block `<!-- shadowarmy:state {JSON} -->`. The JSON is validated against a schema on every read; an unreadable block is reported as `failed` with the reason, never guessed.
-- State JSON fields (version 1), all required, `null` where not applicable: `version` (1), `kind` (`order`, `task`, `new-project`), `target` (`owner/repo`; null for a New project before its repository exists), `base` (branch; null means the default branch), `branch` (`shadowarmy/<issue>-<slug>`), `pr` (number), `round` (fix rounds used), `runs` (list of `{role, runId, conclusion}`; `conclusion` is a GitHub run conclusion or null while running), `ciWaitStartedAt` (ISO 8601 UTC with `Z`), `lastError` (at most 4000 characters), `parent` (order issue of a task), `dependsOn` (task issue numbers). Unknown fields are rejected.
+- State JSON fields (version 1), all required, `null` where not applicable: `version` (1), `kind` (`order`, `task`, `new-project`), `target` (`owner/repo`; null for a New project before its repository exists), `base` (branch; null means the default branch), `branch` (`shadowarmy/<issue>-<slug>`), `pr` (number), `round` (fix rounds used), `runs` (at most 200 entries of `{role, runId, conclusion}`; `conclusion` is a GitHub run conclusion or null while running), `ciWaitStartedAt` (ISO 8601 UTC with `Z`), `lastError` (at most 4000 characters), `parent` (order issue of a task), `dependsOn` (task issue numbers). Unknown fields are rejected.
 - The state block is one line, the last line of the comment. `<`, `>` and `&` inside it are written as JSON `\u` escapes so no value can end the HTML comment early.
-- Text in the human-readable part that may come from issues or agents is escaped: HTML special characters become entities, newlines in one-line fields collapse to spaces, `@mentions` are broken with a zero-width space, and long text is truncated. Links must be `https` URLs.
+- Text in the human-readable part that may come from issues or agents is escaped: HTML special characters become entities, newlines in one-line fields collapse to spaces, `@mentions` are broken with a zero-width space, and long text is truncated. Links must be `https` URLs of at most 1000 characters.
+- The whole comment stays within GitHub's 65536-character limit, measured after escaping. The state block, the summary and the links always fit; the rest of the budget goes to the question, then to the details. When the text does not fit, details are dropped from the end (with a "... N more not shown" line) and then the question is truncated.
 - Human-readable part: current state in one sentence, pull request link, what the army is doing or waiting for, and for `needs-decision` the exact question or approval needed and how to answer.
 - Agents never write the status comment. They return result files; scripts render them.
 

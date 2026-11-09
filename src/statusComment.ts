@@ -22,6 +22,9 @@ export const STATUS_MARKER = "<!-- shadowarmy:status -->";
 const STATE_PREFIX = "<!-- shadowarmy:state ";
 const STATE_SUFFIX = " -->";
 
+/** GitHub rejects comment bodies longer than this. */
+export const MAX_COMMENT_LENGTH = 65536;
+
 export const LIMITS = {
   summary: 1000,
   detail: 1000,
@@ -29,7 +32,10 @@ export const LIMITS = {
   question: 4000,
   linkLabel: 100,
   links: 10,
+  url: 1000,
 } as const;
+
+const SEPARATOR = "\n\n";
 
 const STATE_TITLES: Readonly<Record<StateLabel, string>> = {
   queued: "Queued",
@@ -68,44 +74,87 @@ export class StatusCommentError extends Error {
   override name = "StatusCommentError";
 }
 
-/** Render a full status comment. Throws if the state block is invalid; the engine never writes one. */
+/**
+ * Render a full status comment. Throws if the state block is invalid; the engine never writes one.
+ * The comment never exceeds MAX_COMMENT_LENGTH: the state block, the summary and the links
+ * always fit, the question gets the remaining room first and the details get what is left.
+ */
 export function renderStatusComment(view: StatusView, state: StateBlock): string {
   const checked = validateState(state);
   if (!checked.ok) {
     throw new StatusCommentError(`refusing to write an invalid state block:\n${formatIssues(checked.issues)}`);
   }
 
-  const parts: string[] = [STATUS_MARKER, `**${STATE_TITLES[view.state]}**: ${inline(view.summary, LIMITS.summary)}`];
+  const header = `${STATUS_MARKER}${SEPARATOR}**${STATE_TITLES[view.state]}**: ${inline(view.summary, LIMITS.summary)}`;
+  const links = renderLinks(view.links ?? []);
+  const tail = [...(links === null ? [] : [links]), renderStateBlock(checked.value)].join(SEPARATOR);
 
-  const details = view.details ?? [];
-  if (details.length > 0) {
-    const shown = details.slice(0, LIMITS.details).map((detail) => `- ${inline(detail, LIMITS.detail)}`);
-    if (details.length > LIMITS.details) shown.push(`- ... ${String(details.length - LIMITS.details)} more not shown`);
-    parts.push(shown.join("\n"));
-  }
+  let room = MAX_COMMENT_LENGTH - (header.length + SEPARATOR.length + tail.length + 1);
+  const question = renderQuestion(view.question ?? "", room - SEPARATOR.length);
+  if (question !== null) room -= question.length + SEPARATOR.length;
+  const details = renderDetails(view.details ?? [], room - SEPARATOR.length);
 
-  if (view.question !== undefined && view.question.trim() !== "") {
-    const quoted = escapeText(truncate(view.question.trim(), LIMITS.question))
+  const parts = [header, details, question, tail].filter((part): part is string => part !== null);
+  return parts.join(SEPARATOR) + "\n";
+}
+
+function renderLinks(links: readonly StatusLink[]): string | null {
+  const shown = links.slice(0, LIMITS.links);
+  if (shown.length === 0) return null;
+  return shown
+    .map((link) => {
+      if (!isSafeUrl(link.url)) throw new StatusCommentError(`refusing to link a non-https URL: ${link.url}`);
+      if (link.url.length > LIMITS.url) {
+        throw new StatusCommentError(`refusing to link a URL longer than ${String(LIMITS.url)} characters`);
+      }
+      return `- [${inline(link.label, LIMITS.linkLabel).replace(/[[\]]/g, "\\$&")}](${link.url})`;
+    })
+    .join("\n");
+}
+
+/** The question as a quote, truncated further when it does not fit in `room`; null when there is none or no room. */
+function renderQuestion(question: string, room: number): string | null {
+  const text = question.trim();
+  if (text === "") return null;
+  const render = (max: number): string =>
+    "**Question for the Monarch:**" +
+    SEPARATOR +
+    escapeText(truncate(text, max))
       .split(/\r?\n/)
       .map((line) => (line.trim() === "" ? ">" : `> ${line}`))
       .join("\n");
-    parts.push(`**Question for the Monarch:**\n\n${quoted}`);
-  }
 
-  const links = (view.links ?? []).slice(0, LIMITS.links);
-  if (links.length > 0) {
-    parts.push(
-      links
-        .map((link) => {
-          if (!isSafeUrl(link.url)) throw new StatusCommentError(`refusing to link a non-https URL: ${link.url}`);
-          return `- [${inline(link.label, LIMITS.linkLabel).replace(/[[\]]/g, "\\$&")}](${link.url})`;
-        })
-        .join("\n"),
-    );
+  const length = Math.min(Array.from(text).length, LIMITS.question);
+  const full = render(length);
+  if (full.length <= room) return full;
+  // Every shorter rendering ends with the truncation note, so its length only grows with `max`.
+  let low = 0;
+  let high = length - 1;
+  let best: string | null = null;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = render(mid);
+    if (candidate.length <= room) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
   }
+  return best;
+}
 
-  parts.push(renderStateBlock(checked.value));
-  return parts.join("\n\n") + "\n";
+/** One line per detail, dropping details from the end (with a count) until they fit in `room`. */
+function renderDetails(details: readonly string[], room: number): string | null {
+  const lines = details.slice(0, LIMITS.details).map((detail) => `- ${inline(detail, LIMITS.detail)}`);
+  for (let count = lines.length; count >= 0; count--) {
+    const hidden = details.length - count;
+    if (hidden === 0 && count === 0) return null;
+    const shown = hidden > 0 ? [...lines.slice(0, count), `- ... ${String(hidden)} more not shown`] : lines;
+    const text = shown.join("\n");
+    if (text.length <= room) return text;
+  }
+  return null;
 }
 
 /**

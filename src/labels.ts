@@ -60,13 +60,13 @@ export type TransitionSource = StateLabel | typeof TRIGGER_LABEL;
 const LISTED: Readonly<Record<TransitionSource, readonly StateLabel[]>> = {
   arise: ["queued", "planning", "in-progress"],
   queued: ["planning", "in-progress"],
-  planning: ["needs-decision"],
+  planning: ["needs-decision", "in-progress", "queued"],
   "needs-decision": ["planning", "in-progress", "queued"],
-  "in-progress": ["in-review", "needs-decision"],
+  "in-progress": ["in-review", "ready-to-merge", "needs-decision"],
   "in-review": ["in-progress", "waiting-ci", "ready-to-merge", "needs-decision"],
   "waiting-ci": ["in-review", "ready-to-merge", "needs-decision"],
   "ready-to-merge": ["done", "in-review"],
-  failed: ["queued", "in-progress"],
+  failed: ["planning", "queued", "in-progress"],
   done: [],
   dismissed: [],
 };
@@ -133,6 +133,15 @@ export class TransitionError extends Error {
   override name = "TransitionError";
 }
 
+export interface SetStateOptions {
+  /**
+   * The state is derived from other issues (a multi-task order's state follows
+   * its tasks), so the transition table does not apply. The write is still one
+   * call with exactly one state label, and a final state is never left.
+   */
+  derived?: boolean;
+}
+
 export interface TransitionResult {
   /** The state before the write; `arise` for a fresh order, null when the label set was unreadable. */
   from: TransitionSource | null;
@@ -142,12 +151,17 @@ export interface TransitionResult {
 }
 
 /**
- * Move an issue to `to`, enforcing the transition table. Staying in the same
- * state is allowed and only cleans up a leftover `arise`. An issue with more
- * than one state label can only be moved to `failed` or `dismissed`, which
- * repairs it; anything else throws.
+ * Move an issue to `to`, enforcing the transition table unless the state is
+ * derived (see SetStateOptions). Staying in the same state is allowed and only
+ * cleans up a leftover `arise`. An issue with more than one state label can
+ * only be moved to `failed` or `dismissed`, which repairs it; anything else throws.
  */
-export async function setState(api: IssueLabelsApi, issue: number, to: StateLabel): Promise<TransitionResult> {
+export async function setState(
+  api: IssueLabelsApi,
+  issue: number,
+  to: StateLabel,
+  options: SetStateOptions = {},
+): Promise<TransitionResult> {
   const current = await api.listLabels(issue);
   const read = readState(current);
   let from: TransitionSource | null;
@@ -162,7 +176,8 @@ export async function setState(api: IssueLabelsApi, issue: number, to: StateLabe
     if (from === null) {
       throw new TransitionError(`issue #${String(issue)} has no state label and no ${TRIGGER_LABEL} label`);
     }
-    if (from !== to && !canTransition(from, to)) {
+    const allowed = options.derived === true ? !isFinal(from) : canTransition(from, to);
+    if (from !== to && !allowed) {
       throw new TransitionError(`issue #${String(issue)} cannot move from ${from} to ${to}`);
     }
   }

@@ -20,6 +20,12 @@ export function isRepoFullName(value: string): boolean {
   return parts.length === 2 && isLogin(parts[0] ?? "") && isRepoName(parts[1] ?? "");
 }
 
+/** A `targets` entry in shadowarmy.yml: `owner/name` or `owner/*` for every repository of an owner. */
+export function isTargetPattern(value: string): boolean {
+  const parts = value.split("/");
+  return parts.length === 2 && isLogin(parts[0] ?? "") && (parts[1] === "*" || isRepoName(parts[1] ?? ""));
+}
+
 /**
  * A branch name that git accepts (the rules of `git check-ref-format --branch`)
  * and that is also safe anywhere it ends up: at most 255 characters of letters,

@@ -46,7 +46,7 @@ export interface StateBlock {
   dependsOn: number[];
 }
 
-export const MAX_RUNS = 500;
+export const MAX_RUNS = 200;
 export const MAX_ERROR_LENGTH = 4000;
 
 const issueNumber = { type: "integer", minimum: 1 } as const;

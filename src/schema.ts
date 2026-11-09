@@ -3,7 +3,7 @@
 // it, so the schema and the TypeScript type cannot drift apart silently.
 
 import { Ajv, type ErrorObject, type JSONSchemaType, type SchemaObject } from "ajv";
-import { isRepoFullName, isTaskBranch, isUtcDateTime, isSafeBranchName } from "./names.ts";
+import { isLogin, isRepoFullName, isSafeBranchName, isTargetPattern, isTaskBranch, isUtcDateTime } from "./names.ts";
 
 /** One validation problem, located by a dotted path such as `limits.max_turns`. */
 export interface ValidationIssue {
@@ -14,6 +14,8 @@ export interface ValidationIssue {
 export type Validated<T> = { ok: true; value: T } | { ok: false; issues: ValidationIssue[] };
 
 const ajv = new Ajv({ allErrors: true, strict: true, verbose: true });
+ajv.addFormat("login", { type: "string", validate: isLogin });
+ajv.addFormat("target-pattern", { type: "string", validate: isTargetPattern });
 ajv.addFormat("repo-full-name", { type: "string", validate: isRepoFullName });
 ajv.addFormat("branch-name", { type: "string", validate: isSafeBranchName });
 ajv.addFormat("task-branch", { type: "string", validate: isTaskBranch });
