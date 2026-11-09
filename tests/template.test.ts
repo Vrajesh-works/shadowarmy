@@ -39,7 +39,7 @@ describe("Realm template", () => {
     assert.deepEqual(rest, DEFAULTS);
   });
 
-  it("has a caller workflow that filters arise and dispatches, serializes per issue and grants minimal permissions", () => {
+  it("has a caller workflow that filters arise and engine dispatches, serializes per issue and grants minimal permissions", () => {
     const workflow = parse(read("template/.github/workflows/order.yml")) as Record<string, unknown>;
     assert.deepEqual(workflow.on, {
       issues: { types: ["labeled"] },
@@ -49,7 +49,7 @@ describe("Realm template", () => {
     assert.equal(workflow.concurrency, undefined);
     const job = (workflow.jobs as Record<string, Record<string, unknown> | undefined>).order;
     assert.ok(job);
-    assert.equal(job.if, "github.event_name == 'workflow_dispatch' || github.event.label.name == 'arise'");
+    assert.equal(job.if, "(github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]') || github.event.label.name == 'arise'");
     assert.deepEqual(job.concurrency, { group: "shadowarmy-${{ github.event.issue.number || inputs.issue }}", "cancel-in-progress": false });
     assert.match(String(job.uses), /^Vrajesh-works\/shadowarmy\/\.github\/workflows\/order\.yml@/);
     assert.equal(job.secrets, "inherit");

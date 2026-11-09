@@ -168,8 +168,8 @@ permissions:
 
 jobs:
   order:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'arise'
-    # Only runs that do work join the group, so other labels never cancel a pending order run.
+    if: (github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]') || github.event.label.name == 'arise'
+    # Only runs that can do work join the group, so other labels and manual dispatches never cancel a pending order run.
     concurrency:
       group: shadowarmy-${{ github.event.issue.number || inputs.issue }}
       cancel-in-progress: false
@@ -177,4 +177,4 @@ jobs:
     secrets: inherit
 ```
 
-The engine's reusable workflow re-checks the sender itself (the Monarch for `arise`, the engine's `github-actions[bot]` for a dispatched fix round); the `if:` above is only a cheap filter. The concurrency group sits on the `order` job, not the workflow, so only `arise` and dispatched runs join it: a run for any other label is skipped before it can cancel a pending order run. Realms set up before milestone 2 must replace this file (the `workflow_dispatch` trigger and `actions: write`): with the old caller GitHub rejects every run at startup, because the engine's `judge` job requests `actions: write`, so no order runs at all until the caller file is replaced. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).
+The engine's reusable workflow re-checks the sender itself (the Monarch for `arise`, the engine's `github-actions[bot]` for a dispatched fix round); the `if:` above is only a cheap filter. The concurrency group sits on the `order` job, not the workflow, so only `arise` runs and the engine's own dispatches join it: a run for any other label, or a dispatch by anyone but `github-actions[bot]` (the Monarch included), is skipped before it can cancel a pending order run. Realms set up before milestone 2 must replace this file (the `workflow_dispatch` trigger and `actions: write`): with the old caller GitHub rejects every run at startup, because the engine's `judge` job requests `actions: write`, so no order runs at all until the caller file is replaced. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).

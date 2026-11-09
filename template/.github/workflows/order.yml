@@ -22,8 +22,8 @@ permissions:
 
 jobs:
   order:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'arise'
-    # Only runs that do work join the group, so other labels never cancel a pending order run.
+    if: (github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]') || github.event.label.name == 'arise'
+    # Only runs that can do work join the group, so other labels and manual dispatches never cancel a pending order run.
     concurrency:
       group: shadowarmy-${{ github.event.issue.number || inputs.issue }}
       cancel-in-progress: false
