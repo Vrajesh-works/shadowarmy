@@ -1,6 +1,8 @@
 # shadowarmy Behavior Contract
 
-Updated November 8, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. **Nothing in it is implemented yet.** Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
+Updated November 8, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
+
+Milestone 0 added the deterministic building blocks for sections 4 and 5 as library code with unit tests. No workflow calls them yet, so no rule below is implemented end to end on GitHub.
 
 Read [the root instructions](../AGENTS.md) before editing. Implementation work does not authorize changing a rule here. Resolve contradictions or missing decisions explicitly, record them in [decisions](decisions.md) and update affected docs and diagrams in the same pull request.
 
@@ -43,7 +45,9 @@ Agreed November 8, 2026.
 
 ## 4. Lifecycle And Labels
 
-Agreed November 8, 2026. Labels are the source of truth for state. Exactly one state label is present on an order or task at any time; the engine's label writer enforces this by removing every other state label in the same API call that adds the new one.
+Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a workflow: the label set, the transition table and the single-state label writer are `src/labels.ts`, covered by `tests/labels.test.ts` (which also checks the table below against the code).
+
+Labels are the source of truth for state. Exactly one state label is present on an order or task at any time; the engine's label writer enforces this by removing every other state label in the same API call that adds the new one.
 
 | Label | Kind | Meaning |
 | --- | --- | --- |
@@ -65,25 +69,31 @@ Transitions:
 ```text
 arise -> queued | planning | in-progress
 queued -> planning | in-progress
-planning -> needs-decision (plan posted) | failed
-needs-decision -> in-progress | queued (after /approve or /answer) | dismissed
-in-progress -> in-review | needs-decision (Soldier blocked) | failed
+planning -> needs-decision (plan posted) | in-progress | queued (single-task plan dispatched without approval) | failed
+needs-decision -> planning (after /answer to a Marshal question) | in-progress | queued (after /approve or /answer) | dismissed
+in-progress -> in-review | ready-to-merge (milestone 1 only, before the Knight exists; milestone 2 removes it) | needs-decision (Soldier blocked) | failed
 in-review -> in-progress (fix round) | waiting-ci | ready-to-merge | needs-decision (fix rounds used up) | failed
 waiting-ci -> in-review (CI failed, fix round) | ready-to-merge | needs-decision (CI wait limit)
 ready-to-merge -> done (merged) | in-review (Monarch requested changes on the PR) | dismissed (PR closed unmerged)
-failed -> queued | in-progress (after /retry)
+failed -> planning | queued | in-progress (after /retry)
+any non-final state -> failed (a step failed, section 11)
 any non-final state -> dismissed (after /dismiss)
 ```
 
-A multi-task order's own state is derived by the Sentinel from its tasks: `in-progress` while any task is active, `needs-decision` while any task needs the Monarch, `ready-to-merge` when all open tasks are ready, `done` when all tasks are done, `failed` only when a task failed and nothing else is active.
+"Any non-final state" includes a fresh order that only carries `arise`; `done` and `dismissed` are final. Moving to the state an issue already has is not a transition: the writer only removes a leftover `arise`. An issue that somehow carries two state labels can only be repaired by moving it to `failed` or `dismissed`.
+
+A multi-task order's own state is derived by the Sentinel from its tasks: `in-progress` while any task is active, `needs-decision` while any task needs the Monarch, `ready-to-merge` when all open tasks are ready, `done` when all tasks are done, `failed` only when a task failed and nothing else is active. Because this state follows the tasks rather than a step of the order, the table above does not apply to it: the Sentinel writes it with the label writer's derived mode, which skips the table but still writes exactly one state label in one call, removes `arise` and never leaves a final state.
 
 ## 5. The Status Comment
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Library implemented in milestone 0, not yet used by a workflow: rendering, parsing and the state block schema are `src/statusComment.ts` and `src/schemas/state.ts`, covered by `tests/statusComment.test.ts`. Finding the comment and checking its author arrive with the first workflow (milestone 1).
 
 - Each order and task has exactly one status comment, written by the engine and edited in place. It starts with `<!-- shadowarmy:status -->`.
 - It ends with a machine block `<!-- shadowarmy:state {JSON} -->`. The JSON is validated against a schema on every read; an unreadable block is reported as `failed` with the reason, never guessed.
-- State JSON fields (version 1): `version`, `target` (`owner/repo`), `branch`, `pr` (number), `round` (fix rounds used), `runs` (list of `{role, runId, conclusion}`), `ciWaitStartedAt` (ISO 8601 UTC), `lastError`.
+- State JSON fields (version 1), all required, `null` where not applicable: `version` (1), `kind` (`order`, `task`, `new-project`), `target` (`owner/repo`; null for a New project before its repository exists), `base` (branch; null means the default branch), `branch` (`shadowarmy/<issue>-<slug>`), `pr` (number), `round` (fix rounds used), `runs` (at most 200 entries of `{role, runId, conclusion}`; `conclusion` is a GitHub run conclusion or null while running), `ciWaitStartedAt` (ISO 8601 UTC with `Z`), `lastError` (at most 4000 characters), `parent` (order issue of a task), `dependsOn` (task issue numbers). Unknown fields are rejected.
+- The state block is one line, the last line of the comment. `<`, `>` and `&` inside it are written as JSON `\u` escapes so no value can end the HTML comment early.
+- Text in the human-readable part that may come from issues or agents is escaped: HTML special characters become entities, newlines in one-line fields collapse to spaces, `@mentions` are broken with a zero-width space, and long text is truncated. Links must be `https` URLs of at most 1000 characters.
+- The whole comment stays within GitHub's 65536-character limit, measured after escaping. The state block, the summary and the links always fit; the rest of the budget goes to the question, then to the details. When the text does not fit, details are dropped from the end (with a "... N more not shown" line) and then the question is truncated.
 - Human-readable part: current state in one sentence, pull request link, what the army is doing or waiting for, and for `needs-decision` the exact question or approval needed and how to answer.
 - Agents never write the status comment. They return result files; scripts render them.
 
@@ -95,7 +105,7 @@ Agreed November 8, 2026.
 - Labels: adding `arise` starts an order. Only label events whose `sender` is the Monarch count.
 - Comment commands on an order or task issue, one per comment, at the start of a line:
   - `/approve`: approve the posted plan (or the pending repository creation for a New project).
-  - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input.
+  - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input. It is read from the comment itself when that run is assembled, not stored in the state block.
   - `/retry`: restart a `failed` order or task from its last safe point (see section 11).
   - `/dismiss`: stop the order or task. Running jobs are cancelled; branches and pull requests are left as they are and listed in the status comment for the Monarch to close.
   - `/status`: re-render the status comment from current GitHub state.
@@ -217,10 +227,10 @@ Agreed November 8, 2026.
 When implemented, each of these needs an automated test (unit or end-to-end) named in this section:
 
 - Commands and `arise` from a non-Monarch account change nothing.
-- Exactly one state label after every transition, including concurrent events.
+- Exactly one state label after every transition, including concurrent events. Unit: `tests/labels.test.ts` ("leaves exactly one state label after every allowed transition", "keeps one state label when two events race on the same issue"). End to end: pending (milestone 1).
 - The diff guard rejects every forbidden path and accepts an explicit, recorded exception.
 - The agent step's environment contains no GitHub token, and the checkout has no persisted credentials.
-- Issue text containing shell metacharacters and `${{ }}` sequences never executes.
+- Issue text containing shell metacharacters and `${{ }}` sequences never executes. Unit: `tests/issueForm.test.ts` ("keeps shell metacharacters, expressions and fake markers as inert data"); workflow lint: `scripts/check-workflow-expressions.ts` fails CI on any `${{ }}` inside a `run:` script (`tests/workflowExpressions.test.ts`). End to end: pending (milestone 1).
 - An unparsable agent result file produces `failed`, not `done`.
 - `/retry` after a failure with an existing pull request reuses the branch.
 - Fix rounds stop at the limit and produce `needs-decision`.

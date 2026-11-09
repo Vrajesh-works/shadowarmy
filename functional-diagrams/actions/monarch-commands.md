@@ -21,7 +21,7 @@ sequenceDiagram
       CMD->>Realm: Reply "nothing waiting for approval"
     end
   else /answer text
-    CMD->>Realm: Record answer in state block (answers list)
+    Note over CMD,Realm: The answer stays in the Monarch's /answer comment - nothing is copied into the state block
     CMD->>WF: Dispatch the role that asked (Marshal or Soldier) with answers.md
   else /retry
     alt state is failed

@@ -17,7 +17,7 @@ Maintenance note: whenever the architecture, an order's lifecycle, a label, a co
 
 ## Current Context Summary
 
-shadowarmy is at the design stage (November 8, 2026). No code exists. The agreed design:
+shadowarmy is in early build (November 8, 2026). Milestone 0 is in place: a Node 22 TypeScript project with the `shadowarmy.yml` schema, the issue form parser, the label transition table and writer, the status comment renderer and parser, unit tests and engine CI. No workflow runs an order yet. The agreed design:
 
 - **Product:** an AI software team with exactly one human, the Monarch. The Monarch writes orders as GitHub issues; agents plan, implement, review and test the work and deliver it as pull requests in the Monarch's project repositories.
 - **Two kinds of repository:**

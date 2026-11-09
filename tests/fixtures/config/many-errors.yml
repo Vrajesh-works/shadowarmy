@@ -1,0 +1,22 @@
+version: 2
+monarch: "not a login!"
+targets:
+  - good/repo
+  - "no-slash"
+approval:
+  plan: sometimes
+limits:
+  max_turns: "lots"
+  max_turn: 10
+  run_timeout_minutes: 999
+  max_concurrent_soldiers: 0
+sentinel:
+  interval_minutes: 1
+roles:
+  soldier: { model: "sonnet; rm -rf /" }
+  scout: { enabled: "yes" }
+git:
+  author: "no email here"
+pr:
+  draft: "false"
+colour: blue

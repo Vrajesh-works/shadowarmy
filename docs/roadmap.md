@@ -6,6 +6,8 @@ Updated November 8, 2026. Each milestone is done only when its acceptance criter
 
 Goal: an engine repository a contributor can build and test.
 
+Status: implemented; done once the engine CI run for its pull request is green on GitHub (run link recorded in that pull request).
+
 - TypeScript project (Node 22), `npm run check`, `npm test` (node:test), `npm run lint` (eslint, actionlint, shellcheck).
 - `src/config.ts` with the `shadowarmy.yml` schema and defaults; `src/issueForm.ts` parser; `src/labels.ts` single-state label writer; `src/statusComment.ts` render and parse with the state block schema.
 - Engine CI workflow running the checks on pull requests.

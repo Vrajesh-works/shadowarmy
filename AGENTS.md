@@ -33,12 +33,13 @@ These instructions apply to anyone, human or agent, building the shadowarmy engi
 
 ## Scope And Existing Code
 
-Nothing is implemented yet. Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
+Milestone 0 (repository foundation) exists: config, issue form, label and status comment modules in `src/` with unit tests, and the engine CI. No workflow that runs an order exists yet. Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
 
-| Work area (planned) | Guidance |
+| Work area | Guidance |
 | --- | --- |
-| Reusable workflows `.github/workflows/` | [Architecture](functional-diagrams/architecture.md), [behavior contract](docs/behavior-contract.md) |
-| Engine scripts `src/` | [Roles](docs/roles.md), [behavior contract](docs/behavior-contract.md) |
+| Reusable workflows `.github/workflows/` (planned; `ci.yml` is the engine's own CI) | [Architecture](functional-diagrams/architecture.md), [behavior contract](docs/behavior-contract.md) |
+| Engine scripts `src/` (schemas in `src/schemas/`) | [Roles](docs/roles.md), [behavior contract](docs/behavior-contract.md) |
+| Dev scripts `scripts/` (lint helpers, not shipped) | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Role prompts `roles/` | [Roles](docs/roles.md) |
 | Realm skeleton `template/` | [Configuration](docs/configuration.md) |
 | `init` CLI `src/cli/` | [Setup sequence](functional-diagrams/actions/setup-realm.md), [security](docs/security.md) |
