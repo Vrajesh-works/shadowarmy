@@ -34,7 +34,7 @@ claude -p "$(cat "$PROMPT_FILE")" \
 | `project.md` | Realm `projects/<owner>__<repo>.md`, if it exists | all except Sentinel |
 | `order.md` | Order issue title and parsed task text | all |
 | `task.md` | Task title, description, acceptance criteria | Soldier, Knight, Scout |
-| `answers.md` | Monarch `/answer` texts, oldest first | all |
+| `answers.md` | Texts of the issue's `/answer` comments whose author is the configured Monarch, oldest first | all |
 | `feedback.md` | Knight findings, Scout bugs, CI failure excerpts and Monarch change requests for this round | Soldier on fix rounds |
 | `diff.patch` | Full diff of the task branch against the default branch | Knight, Scout |
 | `soldier-result.json` | Latest Soldier output | Knight, Scout |

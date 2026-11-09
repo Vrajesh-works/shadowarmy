@@ -105,7 +105,7 @@ Agreed November 8, 2026.
 - Labels: adding `arise` starts an order. Only label events whose `sender` is the Monarch count.
 - Comment commands on an order or task issue, one per comment, at the start of a line:
   - `/approve`: approve the posted plan (or the pending repository creation for a New project).
-  - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input.
+  - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input. It is read from the comment itself when that run is assembled, not stored in the state block.
   - `/retry`: restart a `failed` order or task from its last safe point (see section 11).
   - `/dismiss`: stop the order or task. Running jobs are cancelled; branches and pull requests are left as they are and listed in the status comment for the Monarch to close.
   - `/status`: re-render the status comment from current GitHub state.
