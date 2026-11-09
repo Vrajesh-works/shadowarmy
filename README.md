@@ -86,4 +86,4 @@ npx shadowarmy init          # create your private Realm, labels and secrets
 
 ## License
 
-MIT (planned).
+[MIT](LICENSE)
