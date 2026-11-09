@@ -152,14 +152,14 @@ permissions:
   contents: read
   issues: write
   actions: read
-concurrency:
-  group: shadowarmy-${{ github.event.issue.number }}
-  cancel-in-progress: false
 jobs:
   order:
     if: github.event.label.name == 'arise'
+    concurrency:
+      group: shadowarmy-${{ github.event.issue.number }}
+      cancel-in-progress: false
     uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
     secrets: inherit
 ```
 
-The engine's reusable workflow re-checks the sender against `monarch` itself; the `if:` above is only a cheap filter. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).
+The engine's reusable workflow re-checks the sender against `monarch` itself; the `if:` above is only a cheap filter. The concurrency group sits on the `order` job, not the workflow, so only `arise` runs join it: a run for any other label is skipped before it can cancel a pending `arise` run. The caller uses `@main` until the first release, then the `v1` tag ([decision 25](decisions.md)).

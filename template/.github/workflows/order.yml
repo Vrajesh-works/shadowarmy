@@ -11,12 +11,11 @@ permissions:
   issues: write
   actions: read
 
-concurrency:
-  group: shadowarmy-${{ github.event.issue.number }}
-  cancel-in-progress: false
-
 jobs:
   order:
     if: github.event.label.name == 'arise'
+    concurrency:
+      group: shadowarmy-${{ github.event.issue.number }}
+      cancel-in-progress: false
     uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
     secrets: inherit

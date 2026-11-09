@@ -81,15 +81,16 @@ Dispatch between workflows uses `workflow_dispatch` through the Realm's `GITHUB_
 
 ## Jobs Of `order.yml`
 
-Implemented in milestone 1 up to `ready-to-merge` without the Knight; the dashed edge leads to the steps that arrive in milestone 2. The agent runs in its own job so it never shares a runner with the GitHub write token ([decision 23](../docs/decisions.md)).
+Implemented in milestone 1 up to `ready-to-merge` without the Knight; the dashed edge leads to the steps that arrive in milestone 2. The agent runs in its own job, and that job is never sent the GitHub write token: the gate job fetches the target and hands the checkout over with the Soldier inputs ([decision 23](../docs/decisions.md)).
 
 ```mermaid
 flowchart TB
-  subgraph gate[gate job: Realm token]
-    A[Actor check, config, order form, target, secrets, daily cap] --> C[Assemble input files]
+  subgraph gate[gate job: Realm token + SHADOWARMY_GH_TOKEN in the Gate step]
+    A[Actor check, config, order form, target, secrets, daily cap] --> T[Fetch target base, pack checkout]
+    T --> C[Assemble input files]
   end
-  subgraph soldier[soldier job: Claude credential only, no GitHub permissions]
-    B[Checkout target at base<br/>persist-credentials false] --> D[Soldier agent step]
+  subgraph soldier[soldier job: Claude credential only, no GitHub token]
+    B[Unpack target checkout] --> D[Soldier agent step]
     D --> P[Collect patch and result]
   end
   subgraph deliver[deliver job: Realm token + SHADOWARMY_GH_TOKEN]

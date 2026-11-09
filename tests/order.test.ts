@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { parseIssueLabeledEvent } from "../src/event.ts";
 import { runDeliver } from "../src/order/deliver.ts";
 import { runFail } from "../src/order/fail.ts";
-import { runGate, type GateInput } from "../src/order/gate.ts";
+import { runGate, TARGET_ARCHIVE, type GateInput } from "../src/order/gate.ts";
+import { RealmIssue } from "../src/realmIssue.ts";
 import { parseStatusComment, type StateBlock } from "../src/statusComment.ts";
 import { FakeGitHub } from "./helpers/fakeGitHub.ts";
 import { labeledEvent, result } from "./helpers/fixtures.ts";
@@ -39,18 +40,32 @@ function status(gh: FakeGitHub): { body: string; state: StateBlock | null } {
   return { body: comment.body, state: parsed.ok ? parsed.state : null };
 }
 
-async function gate(gh: FakeGitHub, overrides: Partial<GateInput> & { body?: string; sender?: string; label?: string } = {}) {
+/** Seed the status comment an earlier run left on the issue. */
+async function seedStatus(gh: FakeGitHub, state: Partial<StateBlock>): Promise<void> {
+  const block: StateBlock = {
+    version: 1, kind: "order", target: TARGET, base: null, branch: "shadowarmy/42-add-an-rss-feed", pr: null,
+    round: 0, runs: [], ciWaitStartedAt: null, lastError: null, parent: null, dependsOn: [], ...state,
+  };
+  await new RealmIssue(gh, REALM, 42).writeStatus({ state: "in-progress", summary: "Working." }, block);
+}
+
+async function gate(
+  gh: FakeGitHub,
+  overrides: Partial<GateInput> & { body?: string; sender?: string; label?: string; remote?: TargetRepo } = {},
+) {
   const logs: string[] = [];
   let authorized = false;
+  const remote = overrides.remote ?? targetRepo();
   const output = await runGate({
     event: parseIssueLabeledEvent(labeledEvent({ body: overrides.body ?? ORDER_BODY, sender: overrides.sender, label: overrides.label })),
     client: gh,
     realmDir: realmDir(),
     engineDir: ENGINE,
     inputsDir: join(tmp(), "in"),
-    run,
+    workDir: tmp(),
+    run: { ...run, serverUrl: `file://${remote.remoteRoot}` },
     hasClaudeCredential: true,
-    hasGitHubToken: true,
+    githubToken: "test-token",
     fakeAgent: "",
     now: new Date("2026-11-08T12:00:00Z"),
     log: (line) => logs.push(line),
@@ -72,11 +87,13 @@ describe("gate", () => {
   it("starts a valid order: in-progress, status comment, inputs and job outputs", async () => {
     const gh = freshIssue();
     const inputsDir = join(tmp(), "in");
-    const { output, authorized } = await gate(gh, { inputsDir });
+    const remote = targetRepo();
+    const { output, authorized } = await gate(gh, { inputsDir, remote });
     assert.deepEqual(output, {
       proceed: true,
       target: TARGET,
-      base: "",
+      baseRef: "main",
+      baseSha: remote.baseSha,
       model: "sonnet",
       maxTurns: 150,
       timeoutMinutes: 45,
@@ -127,6 +144,32 @@ describe("gate", () => {
     assert.deepEqual(outsider.issue(REALM, 42).labels, ["order", "arise"]);
   });
 
+  it("with an invalid shadowarmy.yml, only removes arise from an order arise cannot restart", async () => {
+    for (const final of ["ready-to-merge", "done", "dismissed"]) {
+      const gh = freshIssue(["order", final, "arise"]);
+      await seedStatus(gh, { pr: 7 });
+      const before = gh.issue(REALM, 42).comments[0]?.body;
+      const { output } = await gate(gh, { realmDir: realmDir("nonsense: [") });
+      assert.equal(output.proceed, false);
+      assert.deepEqual(gh.issue(REALM, 42).labels, ["order", final]);
+      assert.equal(gh.issue(REALM, 42).comments[0]?.body, before, "the status comment is untouched");
+    }
+  });
+
+  it("keeps the recorded branch, pull request and runs when it fails on an invalid shadowarmy.yml", async () => {
+    const gh = freshIssue(["order", "failed", "arise"]);
+    const runs = [{ role: "soldier" as const, runId: 5, conclusion: "failure" as const }];
+    await seedStatus(gh, { pr: 7, runs });
+    await gate(gh, { realmDir: realmDir("nonsense: [") });
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
+    const { body, state } = status(gh);
+    assert.match(body, /step &quot;load configuration&quot;|step "load configuration"/);
+    assert.ok(state);
+    assert.equal(state.pr, 7);
+    assert.equal(state.branch, "shadowarmy/42-add-an-rss-feed");
+    assert.deepEqual(state.runs, runs);
+  });
+
   it("fails orders whose body does not match the form, or whose target is not allowed", async () => {
     const gh = freshIssue();
     await gate(gh, { body: "please do things" });
@@ -144,7 +187,7 @@ describe("gate", () => {
 
   it("fails clearly when secrets are missing", async () => {
     const gh = freshIssue();
-    await gate(gh, { hasClaudeCredential: false, hasGitHubToken: false });
+    await gate(gh, { hasClaudeCredential: false, githubToken: "" });
     assert.match(status(gh).body, /Missing Realm secrets: SHADOWARMY_GH_TOKEN; CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY\./);
   });
 
@@ -156,6 +199,50 @@ describe("gate", () => {
     assert.equal(output.proceed, false);
     assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "queued"]);
     assert.match(status(gh).body, /Agent runs today: 30 of 30/);
+  });
+
+  it("packs the target at the head of the default branch for the soldier job", async () => {
+    const remote = targetRepo(undefined, "trunk");
+    const inputsDir = join(tmp(), "in");
+    const { output } = await gate(freshIssue(), { inputsDir, remote });
+    assert.equal(output.baseRef, "trunk");
+    assert.equal(output.baseSha, remote.baseSha);
+
+    const work = tmp();
+    execFileSync("tar", ["-xzf", "-"], { cwd: work, input: readFileSync(join(inputsDir, TARGET_ARCHIVE)) });
+    assert.equal(sh(work, "rev-parse", "HEAD").trim(), remote.baseSha);
+    assert.equal(sh(work, "rev-parse", "--abbrev-ref", "HEAD").trim(), "trunk");
+    assert.equal(sh(work, "status", "--porcelain"), "", "the checkout is clean");
+    const config = readFileSync(join(work, ".git", "config"), "utf8");
+    assert.ok(!config.includes("test-token") && !config.includes("extraheader"), "no credential is stored in the checkout");
+  });
+
+  it("checks out the base branch the order names", async () => {
+    const remote = targetRepo();
+    writeFileSync(join(remote.work, "CHANGELOG.md"), "release\n");
+    sh(remote.work, "checkout", "--quiet", "-b", "release");
+    sh(remote.work, "add", "-A");
+    sh(remote.work, "commit", "--quiet", "-m", "release");
+    sh(remote.work, "push", "--quiet", remote.bare, "release");
+    const releaseSha = sh(remote.work, "rev-parse", "HEAD").trim();
+
+    const { output } = await gate(freshIssue(), { remote, body: ORDER_BODY.replace("_No response_", "release") });
+    assert.equal(output.baseRef, "release");
+    assert.equal(output.baseSha, releaseSha);
+    assert.notEqual(releaseSha, remote.baseSha);
+  });
+
+  it("fails at check out target when the base branch does not exist, before starting the order", async () => {
+    const gh = freshIssue();
+    const inputsDir = join(tmp(), "in");
+    const { output } = await gate(gh, { inputsDir, body: ORDER_BODY.replace("_No response_", "no-such-branch") });
+    assert.deepEqual(output, { proceed: false });
+    assert.deepEqual(gh.issue(REALM, 42).labels, ["order", "failed"]);
+    const { body } = status(gh);
+    assert.match(body, /step &quot;check out target&quot;|step "check out target"/);
+    assert.match(body, /refs\/heads\/no-such-branch/);
+    assert.match(body, /Check that SHADOWARMY_GH_TOKEN can read the-monarch\/site and that the base branch exists\./);
+    assert.ok(!existsSync(join(inputsDir, "prompt.md")));
   });
 
   it("does not restart an order that is already past the Soldier", async () => {
@@ -197,32 +284,38 @@ function sh(cwd: string, ...args: string[]): string {
   });
 }
 
-interface Fixture {
-  gh: FakeGitHub;
+interface TargetRepo {
   remoteRoot: string;
   bare: string;
   baseSha: string;
-  soldierDir: string;
   work: string;
 }
 
-/** A target repository with one commit, a working copy, and an empty soldier output folder. */
-function fixture(files: Record<string, string> = { "README.md": "# Site\n" }): Fixture {
+interface Fixture extends TargetRepo {
+  gh: FakeGitHub;
+  soldierDir: string;
+}
+
+/** A bare target repository under `file://<remoteRoot>/the-monarch/site.git` with one commit on its default branch, and a working copy. */
+function targetRepo(files: Record<string, string> = { "README.md": "# Site\n" }, defaultBranch = "main"): TargetRepo {
   const remoteRoot = tmp();
   const bare = join(remoteRoot, "the-monarch", "site.git");
   mkdirSync(bare, { recursive: true });
-  sh(bare, "init", "--bare", "--quiet", "--initial-branch=main");
+  sh(bare, "init", "--bare", "--quiet", `--initial-branch=${defaultBranch}`);
   const work = tmp();
-  sh(work, "init", "--quiet", "--initial-branch=main");
+  sh(work, "init", "--quiet", `--initial-branch=${defaultBranch}`);
   for (const [path, text] of Object.entries(files)) writeFileSync(join(work, path), text);
   sh(work, "add", "-A");
   sh(work, "commit", "--quiet", "-m", "initial");
-  sh(work, "push", "--quiet", bare, "main");
-  const baseSha = sh(work, "rev-parse", "HEAD").trim();
+  sh(work, "push", "--quiet", bare, defaultBranch);
+  return { remoteRoot, bare, baseSha: sh(work, "rev-parse", "HEAD").trim(), work };
+}
 
+/** A target repository, its working copy, and an empty soldier output folder. */
+function fixture(files: Record<string, string> = { "README.md": "# Site\n" }): Fixture {
   const gh = freshIssue(["order", "in-progress"]);
   gh.repos.set(TARGET, { private: true });
-  return { gh, remoteRoot, bare, baseSha, soldierDir: tmp(), work };
+  return { ...targetRepo(files), gh, soldierDir: tmp() };
 }
 
 /** Simulate the soldier job: edit the working copy, then write changes.patch and result.json. */
@@ -235,13 +328,7 @@ function soldier(f: Fixture, edit: (dir: string) => void, res: object | null = r
 
 async function deliver(f: Fixture, options: { body?: string; soldierJob?: string; state?: Partial<StateBlock> } = {}) {
   // Seed the status comment the gate would have written.
-  const { RealmIssue } = await import("../src/realmIssue.ts");
-  const issue = new RealmIssue(f.gh, REALM, 42);
-  const base: StateBlock = {
-    version: 1, kind: "order", target: TARGET, base: null, branch: "shadowarmy/42-add-an-rss-feed", pr: null,
-    round: 0, runs: [], ciWaitStartedAt: null, lastError: null, parent: null, dependsOn: [], ...options.state,
-  };
-  if (f.gh.issue(REALM, 42).comments.length === 0) await issue.writeStatus({ state: "in-progress", summary: "Working." }, base);
+  if (f.gh.issue(REALM, 42).comments.length === 0) await seedStatus(f.gh, options.state ?? {});
 
   await runDeliver({
     event: parseIssueLabeledEvent(labeledEvent({ body: options.body ?? ORDER_BODY })),
@@ -317,6 +404,24 @@ describe("deliver", () => {
     assert.match(status(f.gh).body, /Allowed because the order names them: CLAUDE.md/);
   });
 
+  it("rejects a submodule added by the Soldier with the diff guard", async () => {
+    const f = fixture();
+    soldier(f, (dir) => {
+      const nested = join(dir, "vendor", "lib");
+      mkdirSync(nested, { recursive: true });
+      sh(nested, "init", "--quiet");
+      writeFileSync(join(nested, "lib.txt"), "lib\n");
+      sh(nested, "add", "-A");
+      sh(nested, "commit", "--quiet", "-m", "lib");
+    });
+    assert.match(readFileSync(join(f.soldierDir, "changes.patch"), "utf8"), /Subproject commit [0-9a-f]{40}/);
+    await deliver(f);
+    assert.deepEqual(f.gh.issue(REALM, 42).labels, ["order", "failed"]);
+    assert.match(status(f.gh).body, /step &quot;diff guard&quot;|step "diff guard"/);
+    assert.match(status(f.gh).body, /vendor\/lib: submodule changes are not allowed/);
+    assert.equal(sh(f.bare, "branch", "--list").trim(), "* main");
+  });
+
   it("rejects files carrying shadowarmy markers", async () => {
     const f = fixture();
     soldier(f, (dir) => { writeFileSync(join(dir, "notes.md"), "<!-- shadowarmy:state {} -->\n"); });
@@ -352,11 +457,6 @@ describe("deliver", () => {
     await deliver(g, { soldierJob: "failure" });
     assert.match(status(g.gh).body, /used all 150 turns/);
     assert.deepEqual(status(g.gh).state?.runs, [{ role: "soldier", runId: 99, conclusion: "failure" }]);
-
-    const h = fixture();
-    writeFileSync(join(h.soldierDir, "job-status.json"), JSON.stringify({ checkout: "failure" }));
-    await deliver(h, { soldierJob: "failure" });
-    assert.match(status(h.gh).body, /Could not check out the-monarch\/site/);
   });
 
   it("moves a blocked Soldier to needs-decision with its question", async () => {

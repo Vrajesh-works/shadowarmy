@@ -2,9 +2,12 @@ name: shadowarmy order
 
 # Reusable workflow called by a Realm's order.yml when a Realm issue is labeled.
 # The jobs keep the GitHub write token away from the agent:
-#   gate     - Realm token only: actor check, config, order form, limits, inputs.
-#   soldier  - Claude credential only (plus a read-only checkout). Runs the agent.
-#              Everything it produces is treated as untrusted.
+#   gate     - Realm token + SHADOWARMY_GH_TOKEN (Gate step only): actor check,
+#              config, order form, limits, inputs; fetches the target and packs
+#              it into the Soldier inputs, and records the base commit.
+#   soldier  - Claude credential only; never receives SHADOWARMY_GH_TOKEN.
+#              Unpacks the target and runs the agent. Everything it produces
+#              is treated as untrusted.
 #   deliver  - Realm token + SHADOWARMY_GH_TOKEN: validates the result on a fresh
 #              runner, applies the patch, diff guard, push, pull request, labels.
 #   report-failure - marks the order failed if a job crashed before reporting.
@@ -38,7 +41,8 @@ jobs:
       authorized: ${{ steps.gate.outputs.authorized }}
       proceed: ${{ steps.gate.outputs.proceed }}
       target: ${{ steps.gate.outputs.target }}
-      base: ${{ steps.gate.outputs.base }}
+      base_ref: ${{ steps.gate.outputs.base_ref }}
+      base_sha: ${{ steps.gate.outputs.base_sha }}
       model: ${{ steps.gate.outputs.model }}
       max_turns: ${{ steps.gate.outputs.max_turns }}
       timeout_minutes: ${{ steps.gate.outputs.timeout_minutes }}
@@ -71,7 +75,7 @@ jobs:
           SHADOWARMY_INPUTS_DIR: ${{ runner.temp }}/shadowarmy/in
           SHADOWARMY_FAKE_AGENT: ${{ vars.SHADOWARMY_FAKE_AGENT }}
           HAS_CLAUDE_CREDENTIAL: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
-          HAS_GH_TOKEN: ${{ secrets.SHADOWARMY_GH_TOKEN != '' }}
+          SHADOWARMY_GH_TOKEN: ${{ secrets.SHADOWARMY_GH_TOKEN }}
         run: node engine/src/cli/order.ts gate
       - name: Upload Soldier inputs
         if: steps.gate.outputs.proceed == 'true'
@@ -88,34 +92,17 @@ jobs:
     timeout-minutes: ${{ fromJSON(needs.gate.outputs.timeout_minutes) }}
     # No GITHUB_TOKEN permissions at all: this job runs the agent.
     permissions: {}
-    outputs:
-      base_sha: ${{ steps.base.outputs.sha }}
-      base_ref: ${{ steps.base.outputs.ref }}
     steps:
       - name: Download Soldier inputs
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: soldier-input
           path: ${{ runner.temp }}/shadowarmy/in
-      - name: Check out target
-        id: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ needs.gate.outputs.target }}
-          ref: ${{ needs.gate.outputs.base }}
-          token: ${{ secrets.SHADOWARMY_GH_TOKEN }}
-          path: work
-          persist-credentials: false
-      - name: Record base commit
-        id: base
-        working-directory: work
-        env:
-          BASE: ${{ needs.gate.outputs.base }}
+      - name: Unpack target
+        id: target
         run: |
-          sha="$(git rev-parse HEAD)"
-          ref="${BASE:-$(git rev-parse --abbrev-ref HEAD)}"
-          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          mkdir work
+          tar -xzf "$RUNNER_TEMP/shadowarmy/in/target.tar.gz" -C work
       - name: Install Claude Code
         if: needs.gate.outputs.fake_agent == ''
         run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
@@ -147,25 +134,15 @@ jobs:
             --no-session-persistence \
             > "$RUNNER_TEMP/shadowarmy/claude.json"
       - name: Collect changes
-        if: always() && steps.base.outcome == 'success'
+        if: always() && steps.target.outcome == 'success'
         working-directory: work
         env:
-          BASE_SHA: ${{ steps.base.outputs.sha }}
-          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
-          AGENT_OUTCOME: ${{ steps.agent.outcome }}
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
         run: |
           out="$RUNNER_TEMP/shadowarmy/out"
           mkdir -p "$out"
           git add -A
           git diff --cached --binary "$BASE_SHA" > "$out/changes.patch"
-          printf '{"checkout":"%s","agent":"%s"}\n' "$CHECKOUT_OUTCOME" "$AGENT_OUTCOME" > "$out/job-status.json"
-      - name: Record checkout failure
-        if: always() && steps.checkout.outcome != 'success'
-        env:
-          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/shadowarmy/out"
-          printf '{"checkout":"%s"}\n' "$CHECKOUT_OUTCOME" > "$RUNNER_TEMP/shadowarmy/out/job-status.json"
       - name: Redact agent summary
         if: always()
         env:
@@ -231,8 +208,8 @@ jobs:
           SHADOWARMY_REALM_DIR: ${{ github.workspace }}/realm
           SHADOWARMY_SOLDIER_DIR: ${{ runner.temp }}/shadowarmy/soldier
           SOLDIER_JOB_RESULT: ${{ needs.soldier.result }}
-          BASE_SHA: ${{ needs.soldier.outputs.base_sha }}
-          BASE_REF: ${{ needs.soldier.outputs.base_ref }}
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+          BASE_REF: ${{ needs.gate.outputs.base_ref }}
         run: node engine/src/cli/order.ts deliver
 
   report-failure:

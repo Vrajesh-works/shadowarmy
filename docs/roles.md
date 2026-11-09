@@ -80,7 +80,7 @@ For New project orders, `newProject` holds `{ "name", "visibility", "language", 
 **Purpose:** implement one task and leave the branch ready for review.
 
 - **Trigger:** task dispatch, fix round, `/retry`.
-- **Workspace:** fresh checkout of the target repository, on a new `shadowarmy/<n>-<slug>` branch or the existing task branch. No persisted credentials.
+- **Workspace:** fresh checkout of the target repository at the head of the base branch, fetched by the `gate` job and unpacked in the soldier job, which never receives the GitHub token (fix rounds will start from the existing task branch). No credentials in the checkout.
 - **Prompt essentials:** read the task and project notes; for bugs, reproduce first and keep the reproduction as a test when the project has tests; make the smallest change that meets the acceptance criteria; follow the project's existing style; run the project's checks; never touch forbidden paths ([behavior contract section 7](behavior-contract.md#7-clean-project-rule)); do not commit (the script commits); if blocked on a decision, stop and ask.
 - **Output `result.json`** (schema `src/schemas/result.ts`; `verification[].outcome` is `pass`, `fail` or `not-run`; `question` is required when `status` is `blocked`; at most 256 KB):
 

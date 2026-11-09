@@ -28,10 +28,11 @@ export interface DeliverInput {
   targetClient: GitHubClient;
   githubToken: string;
   realmDir: string;
-  /** The downloaded soldier artifact: result.json, changes.patch, job-status.json, claude.json. */
+  /** The downloaded soldier artifact: result.json, changes.patch, claude.json. */
   soldierDir: string;
   /** needs.soldier.result: success, failure, cancelled or skipped. */
   soldierJob: string;
+  /** The base commit and branch the gate job fetched (trusted: no agent ran there). */
   baseSha: string;
   baseRef: string;
   workDir: string;
@@ -55,17 +56,8 @@ function conclusionOf(job: string): RunConclusion | null {
   return job === "success" || job === "failure" || job === "cancelled" || job === "skipped" ? job : null;
 }
 
-/** Why the soldier job produced no usable result, from the facts it recorded (untrusted, so only used to pick a message). */
-export function explainMissingResult(soldierDir: string, soldierJob: string, config: Config, target: string): string {
-  let status: Record<string, unknown> = {};
-  try {
-    status = JSON.parse(readOptional(join(soldierDir, "job-status.json")) ?? "{}") as Record<string, unknown>;
-  } catch {
-    // Unreadable; fall through to the generic message.
-  }
-  if (status.checkout !== undefined && status.checkout !== "success") {
-    return `Could not check out ${target}. Check that SHADOWARMY_GH_TOKEN can read the repository and that the base branch exists.`;
-  }
+/** Why the soldier job produced no usable result, from what it recorded (untrusted, so only used to pick a message). */
+export function explainMissingResult(soldierDir: string, soldierJob: string, config: Config): string {
   let subtype = "";
   try {
     const claude = JSON.parse(readOptional(join(soldierDir, "claude.json")) ?? "{}") as { subtype?: unknown };
@@ -109,7 +101,7 @@ export async function runDeliver(input: DeliverInput): Promise<void> {
       const missing = !existsSync(join(input.soldierDir, "result.json"));
       throw new StepFailure(
         "validate result",
-        missing ? explainMissingResult(input.soldierDir, input.soldierJob, cfg, order.target) : checked.reason,
+        missing ? explainMissingResult(input.soldierDir, input.soldierJob, cfg) : checked.reason,
       );
     }
     const result = checked.result;
@@ -134,7 +126,7 @@ export async function runDeliver(input: DeliverInput): Promise<void> {
     }
 
     if (!isSafeBranchName(input.baseRef) || !/^[0-9a-f]{40}$/.test(input.baseSha)) {
-      throw new StepFailure("check out target", "The soldier job did not record the base commit.");
+      throw new StepFailure("check out target", "The gate job did not record the base commit.");
     }
     const branch = state.branch ?? taskBranchName(event.issue.number, event.issue.title);
     if (!isTaskBranch(branch)) throw new StepFailure("push", `Refusing to push to "${branch}": not a shadowarmy/* task branch.`);
@@ -216,7 +208,7 @@ async function deliverChange(
     for (const path of grep.split("\0")) if (path !== "") marked.add(path);
   }
   for (const file of files) {
-    if (file.status === "D") continue;
+    if (file.status === "D" || file.mode === "160000") continue;
     file.size = Number((await run(["cat-file", "-s", `:${file.path}`])).trim());
     file.hasMarker = marked.has(file.path);
   }

@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { DEFAULTS, parseConfig } from "../src/config.ts";
 import { ORDER_FORM } from "../src/issueForm.ts";
 import { FAKE_AGENT_SCENARIOS } from "../src/order/gate.ts";
+import { checkSoldierResult } from "../src/soldierResult.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -34,21 +39,41 @@ describe("Realm template", () => {
     assert.deepEqual(rest, DEFAULTS);
   });
 
-  it("has a caller workflow that only filters arise, serializes per issue and grants minimal permissions", () => {
+  it("has a caller workflow that only filters arise, serializes arise runs per issue and grants minimal permissions", () => {
     const workflow = parse(read("template/.github/workflows/order.yml")) as Record<string, unknown>;
     assert.deepEqual(workflow.on, { issues: { types: ["labeled"] } });
     assert.deepEqual(workflow.permissions, { contents: "read", issues: "write", actions: "read" });
-    assert.deepEqual(workflow.concurrency, { group: "shadowarmy-${{ github.event.issue.number }}", "cancel-in-progress": false });
+    assert.equal(workflow.concurrency, undefined);
     const job = (workflow.jobs as Record<string, Record<string, unknown> | undefined>).order;
     assert.ok(job);
     assert.equal(job.if, "github.event.label.name == 'arise'");
+    assert.deepEqual(job.concurrency, { group: "shadowarmy-${{ github.event.issue.number }}", "cancel-in-progress": false });
     assert.match(String(job.uses), /^Vrajesh-works\/shadowarmy\/\.github\/workflows\/order\.yml@/);
     assert.equal(job.secrets, "inherit");
   });
 
-  it("knows exactly the fake agent scenarios the script implements", () => {
-    const script = read("scripts/fake-agent.sh");
-    const cases = [...script.matchAll(/^ {2}([a-z-]+)\)$/gm)].map((match) => match[1]);
-    assert.deepEqual(cases, [...FAKE_AGENT_SCENARIOS]);
+  // Oracle: the scenario list in decision 24; every scenario the gate accepts must run.
+  const script = fileURLToPath(new URL("../scripts/fake-agent.sh", import.meta.url));
+  const runScenario = (scenario: string) => {
+    const work = mkdtempSync(join(tmpdir(), "shadowarmy-fake-"));
+    execFileSync("git", ["init", "--quiet"], { cwd: work });
+    const out = mkdtempSync(join(tmpdir(), "shadowarmy-fake-out-"));
+    const ran = spawnSync("bash", [script, scenario], { cwd: work, env: { ...process.env, SHADOWARMY_OUT: out }, encoding: "utf8" });
+    const resultPath = join(out, "result.json");
+    return { ran, result: existsSync(resultPath) ? readFileSync(resultPath, "utf8") : null };
+  };
+
+  for (const scenario of FAKE_AGENT_SCENARIOS) {
+    it(`runs the fake agent scenario ${scenario} and writes a ${scenario === "invalid-result" ? "rejected" : "valid"} result`, () => {
+      const { ran, result } = runScenario(scenario);
+      assert.equal(ran.status, 0, ran.stderr);
+      assert.equal(checkSoldierResult(result).ok, scenario !== "invalid-result");
+    });
+  }
+
+  it("rejects an unknown fake agent scenario", () => {
+    const { ran, result } = runScenario("rm -rf");
+    assert.equal(ran.status, 2);
+    assert.equal(result, null);
   });
 });

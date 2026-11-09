@@ -126,10 +126,10 @@ Agreed November 8, 2026. Implemented in milestone 1: the diff guard is `src/diff
 
 ## 8. Soldier Runs
 
-Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract. Implemented in milestone 1 (end to end: pending). The Soldier runs in its own job, which holds only the Claude credential and a read checkout of the target and whose `GITHUB_TOKEN` has no permissions; its outputs are re-validated in the separate `deliver` job ([decision 23](decisions.md)).
+Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract. Implemented in milestone 1 (end to end: pending). The Soldier runs in its own job, which holds only the Claude credential, never receives `SHADOWARMY_GH_TOKEN` and whose `GITHUB_TOKEN` has no permissions. The `gate` job fetches the target and hands the checkout over in the Soldier inputs; the Soldier's outputs are re-validated in the separate `deliver` job ([decision 23](decisions.md)).
 
-- One Soldier run implements one task in a fresh checkout of the target repository at the head of its default branch (or the existing task branch on fix rounds).
-- The checkout uses `persist-credentials: false`. The agent step's environment contains only its Claude credential, the task files and the toolchain. It has no GitHub token.
+- One Soldier run implements one task in a fresh checkout of the target repository at the head of the order's base branch, or of its default branch when the order names none (or the existing task branch on fix rounds).
+- The checkout is made in the `gate` job and carries no credentials. The soldier job's environment contains only its Claude credential, the task files and the toolchain. It has no GitHub token, and the workflow never sends it `SHADOWARMY_GH_TOKEN`.
 - Inputs: company rules, project notes, the task text, Monarch answers, and on fix rounds the Knight's findings, CI failure excerpts and Monarch change requests.
 - The Soldier must reproduce a bug before fixing it when the task is a bug fix, and must run the project's existing checks (tests, lint, build) that it can discover. It records what it ran and the results.
 - Output: `result.json` with `status` (`done`, `blocked`, `failed`), `title`, `summary`, `verification` (commands and outcomes), `limitations`, and for `blocked` a `question`.
@@ -229,7 +229,7 @@ When implemented, each of these needs an automated test (unit or end-to-end) nam
 - Commands and `arise` from a non-Monarch account change nothing. Unit: `tests/order.test.ts` ("changes nothing for arise from any account other than the Monarch"). End to end: pending.
 - Exactly one state label after every transition, including concurrent events. Unit: `tests/labels.test.ts` ("leaves exactly one state label after every allowed transition", "keeps one state label when two events race on the same issue"). End to end: pending (milestone 1).
 - The diff guard rejects every forbidden path and accepts an explicit, recorded exception. Unit: `tests/diffGuard.test.ts`, `tests/order.test.ts` ("rejects an unrequested CLAUDE.md edit...", "allows CLAUDE.md when the order names it"). End to end: pending.
-- The agent step's environment contains no GitHub token, and the checkout has no persisted credentials. Structure: the soldier job has `permissions: {}`, receives only the Claude secrets, and checks out with `persist-credentials: false` (`.github/workflows/order.yml`). End to end: pending.
+- The agent's job never receives the GitHub write token, and the checkout has no credentials. Structure: the soldier job has `permissions: {}`, references only the Claude secrets and unpacks the checkout the gate job fetched (`.github/workflows/order.yml`). Unit: `tests/order.test.ts` ("packs the target at the head of the default branch for the soldier job"). End to end: pending.
 - Issue text containing shell metacharacters and `${{ }}` sequences never executes. Unit: `tests/issueForm.test.ts` ("keeps shell metacharacters, expressions and fake markers as inert data"); workflow lint: `scripts/check-workflow-expressions.ts` fails CI on any `${{ }}` inside a `run:` script (`tests/workflowExpressions.test.ts`). End to end: pending (milestone 1).
 - An unparsable agent result file produces `failed`, not `done`. Unit: `tests/soldierResult.test.ts`, `tests/order.test.ts` ("fails on an unparsable or missing result"). End to end: pending.
 - `/retry` after a failure with an existing pull request reuses the branch.
