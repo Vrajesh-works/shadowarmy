@@ -145,6 +145,8 @@ Thin files that only declare triggers and permissions. Example `template/.github
 
 ```yaml
 name: shadowarmy order
+# Fix rounds are dispatched runs; without this they would all be titled "shadowarmy order".
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Fix round for order #{0}', inputs.issue) || github.event.issue.title }}"
 
 # Thin caller: declares the triggers and permissions, then hands over to the
 # engine. The engine checks again that the sender is the Monarch (or, for a

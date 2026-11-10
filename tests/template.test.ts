@@ -47,6 +47,10 @@ describe("Realm template", () => {
     });
     assert.deepEqual(workflow.permissions, { contents: "read", issues: "write", actions: "write" });
     assert.equal(workflow.concurrency, undefined);
+    assert.equal(
+      workflow["run-name"],
+      "${{ github.event_name == 'workflow_dispatch' && format('Fix round for order #{0}', inputs.issue) || github.event.issue.title }}",
+    );
     const job = (workflow.jobs as Record<string, Record<string, unknown> | undefined>).order;
     assert.ok(job);
     assert.equal(job.if, "(github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]') || github.event.label.name == 'arise'");
