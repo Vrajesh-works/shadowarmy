@@ -19,6 +19,7 @@ function state(overrides: Partial<StateBlock> = {}): StateBlock {
     kind: "task",
     target: "owner/repo",
     base: "main",
+    baseSha: null,
     branch: "shadowarmy/42-rss-feed",
     pr: 7,
     round: 1,

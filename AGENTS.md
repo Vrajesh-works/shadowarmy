@@ -33,7 +33,7 @@ These instructions apply to anyone, human or agent, building the shadowarmy engi
 
 ## Scope And Existing Code
 
-Milestones 0 and 1 exist: the foundation modules in `src/`, the engine CI, and the single-task order workflow (`.github/workflows/order.yml`, `src/order/`, `roles/soldier.md`, `template/`). Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
+Milestones 0 to 2 exist: the foundation modules in `src/`, the engine CI, and the order workflow with the Soldier, the Knight, fix rounds and the target CI wait (`.github/workflows/order.yml`, `src/order/`, `roles/`, `template/`). Build in the order of [the roadmap](docs/roadmap.md); each milestone must work end to end on real GitHub repositories before the next starts.
 
 | Work area | Guidance |
 | --- | --- |

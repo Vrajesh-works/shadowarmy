@@ -1,12 +1,12 @@
 # Roadmap
 
-Updated November 8, 2026. Each milestone is done only when its acceptance criteria pass end to end on real GitHub repositories (the sandbox Realm and sandbox targets in [DEVELOPMENT.md](../DEVELOPMENT.md)), with run links recorded in the milestone's pull request. Do not start a milestone before the previous one is done.
+Updated November 9, 2026. Each milestone is done only when its acceptance criteria pass end to end on real GitHub repositories (the sandbox Realm and sandbox targets in [DEVELOPMENT.md](../DEVELOPMENT.md)), with run links recorded in the milestone's pull request. Do not start a milestone before the previous one is done.
 
 ## Milestone 0: Repository Foundation
 
 Goal: an engine repository a contributor can build and test.
 
-Status: implemented; done once the engine CI run for its pull request is green on GitHub (run link recorded in that pull request).
+Status: done ([engine CI green on pull request #1](https://github.com/Vrajesh-works/shadowarmy/actions/runs/42567173680)).
 
 - TypeScript project (Node 22), `npm run check`, `npm test` (node:test), `npm run lint` (eslint, actionlint, shellcheck).
 - `src/config.ts` with the `shadowarmy.yml` schema and defaults; `src/issueForm.ts` parser; `src/labels.ts` single-state label writer; `src/statusComment.ts` render and parse with the state block schema.
@@ -44,8 +44,15 @@ Goal: no pull request reaches the Monarch without an independent review and gree
 
 - Knight run after each push; review posted to the pull request.
 - Fix rounds with the Knight's blocker and major findings; round limit; `needs-decision` when exhausted.
-- CI wait in job; `waiting-ci` hand-off (Sentinel picks it up in milestone 3, so until then the run waits up to `ci.max_wait_minutes` in job).
+- CI wait in job. The `waiting-ci` hand-off arrives with the Sentinel in milestone 3, so until then the run waits up to `ci.max_wait_minutes` in job.
 - Fix rounds from failing CI with log excerpts.
+
+Status: done (decisions 30-37). Acceptance runs on the sandbox Realm (private; links work for its owner), November 9-10, 2026:
+
+- Seeded bug found by the Knight and fixed in a later round: [round 0](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42724822272) (fake agent scenario `seed-bug`; Knight requested changes with two blockers), [round 1](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42725069956) (real Soldier fixed it, Knight approved, CI green, `ready-to-merge`), [pull request](https://github.com/Vrajesh-works/shadowarmy-sandbox-node/pull/5).
+- Failing target test reaches `ready-to-merge` only after a fix round: [round 0](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726043544) (Knight approved; the target's `test` check failed), [round 1](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726288746) (fix round from the failing check and its log excerpt; CI green, `ready-to-merge`), [pull request](https://github.com/Vrajesh-works/shadowarmy-sandbox-node/pull/7).
+- Round limit: [round 0](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737284722) and [round 1](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737495292) with `max_fix_rounds: 1` and the fake agent scenario `stubborn-bug`; the order ended in `needs-decision` listing the remaining blocker findings, [pull request](https://github.com/Vrajesh-works/shadowarmy-sandbox-node/pull/8).
+- Also run: the daily cap moved an order to `queued` ([run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726679108)), and a fix-round dispatch by the Monarch is named by the caller's `run-name` and skipped ([run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737840871)).
 
 Acceptance:
 - A seeded order that produces a known bug gets a Knight finding and is fixed in a later round.

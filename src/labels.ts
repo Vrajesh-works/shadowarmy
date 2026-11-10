@@ -62,7 +62,7 @@ const LISTED: Readonly<Record<TransitionSource, readonly StateLabel[]>> = {
   queued: ["planning", "in-progress"],
   planning: ["needs-decision", "in-progress", "queued"],
   "needs-decision": ["planning", "in-progress", "queued"],
-  "in-progress": ["in-review", "ready-to-merge", "needs-decision"],
+  "in-progress": ["in-review", "needs-decision"],
   "in-review": ["in-progress", "waiting-ci", "ready-to-merge", "needs-decision"],
   "waiting-ci": ["in-review", "ready-to-merge", "needs-decision"],
   "ready-to-merge": ["done", "in-review"],

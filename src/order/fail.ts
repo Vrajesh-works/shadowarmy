@@ -3,7 +3,7 @@
 // running, or still has an arise the gate could have acted on, so it never
 // overwrites a real outcome.
 
-import type { IssueLabeledEvent } from "../event.ts";
+import type { OrderEvent } from "../event.ts";
 import type { GitHubClient } from "../github.ts";
 import { canTransition, readState } from "../labels.ts";
 import { RealmIssue } from "../realmIssue.ts";
@@ -11,7 +11,7 @@ import type { StateBlock } from "../statusComment.ts";
 import { newState, reportFailure, type RunInfo } from "./context.ts";
 
 export interface FailInput {
-  event: IssueLabeledEvent;
+  event: OrderEvent;
   client: GitHubClient;
   run: RunInfo;
   /** needs.<job>.result for each job, in order. */
@@ -24,7 +24,9 @@ export async function runFail(input: FailInput): Promise<void> {
   const labels = readState(await issue.listLabels());
   const running =
     labels.ok &&
-    (labels.state === "in-progress" || (labels.trigger && (labels.state === null || canTransition(labels.state, "in-progress"))));
+    (labels.state === "in-progress" ||
+      labels.state === "in-review" ||
+      (labels.trigger && (labels.state === null || canTransition(labels.state, "in-progress"))));
   if (!running) {
     input.log(`Nothing to do: the order already shows its outcome (${labels.ok ? String(labels.state) : labels.reason}).`);
     return;

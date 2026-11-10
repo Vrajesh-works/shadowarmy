@@ -1,6 +1,6 @@
 # Roles Reference
 
-Updated November 9, 2026. Status: the Soldier is implemented (milestone 1, prompt in `roles/soldier.md`, output schema in `src/schemas/result.ts`). The other roles are agreed, not implemented.
+Updated November 9, 2026. Status: the Soldier (milestone 1, `roles/soldier.md`, `src/schemas/result.ts`) and the Knight (milestone 2, `roles/knight.md`, `src/schemas/review.ts`) are implemented. The other roles are agreed, not implemented.
 
 Each agent role is a headless Claude Code run with a prompt from `roles/<role>.md` in the engine, plus context files assembled by a deterministic script. Agents read inputs from files and write outputs to files. Scripts validate outputs against JSON schemas in `src/schemas/` and are the only code that touches GitHub.
 
@@ -38,8 +38,9 @@ Claude Code is pinned (`CLAUDE_CODE_VERSION` in `.github/workflows/order.yml`, [
 | `order.md` | Order issue title and parsed task text | all |
 | `task.md` | Task title, description, acceptance criteria | Soldier, Knight, Scout |
 | `answers.md` | Texts of the issue's `/answer` comments whose author is the configured Monarch, oldest first | all |
-| `feedback.md` | Knight findings, Scout bugs, CI failure excerpts and Monarch change requests for this round | Soldier on fix rounds |
-| `diff.patch` | Full diff of the task branch against the default branch | Knight, Scout |
+| `feedback.md` | Blocker and major Knight findings, Scout bugs, CI failure excerpts and Monarch change requests for this round; rebuilt by the fix round's gate from the Knight's posted review and the failing checks of the pull request's head commit (`src/feedback.ts`) | Soldier on fix rounds |
+| `round` | Fix rounds used so far (0 for the first Soldier run) | Soldier, Knight |
+| `diff.patch` | Full diff of the task branch against the commit where the first round started | Knight, Scout |
 | `soldier-result.json` | Latest Soldier output | Knight, Scout |
 
 ## Marshal
@@ -105,8 +106,8 @@ For New project orders, `newProject` holds `{ "name", "visibility", "language", 
 
 **Purpose:** independent review of every pull request against the order.
 
-- **Trigger:** after each Soldier push, before `ready-to-merge`.
-- **Workspace:** read-only checkout of the task branch, plus `diff.patch`.
+- **Trigger:** after each Soldier push, before `ready-to-merge`, in its own `knight` job (only the Claude credential, `permissions: {}`).
+- **Workspace:** a packed checkout of the pushed task branch (edits are discarded), plus `diff.patch` against the commit the first round started from, so every round's review covers the whole change. No CI results: the Knight reviews before the CI wait ([decision 37](decisions.md)).
 - **Prompt essentials:** check the diff against the task and acceptance criteria; look for correctness bugs, missing tests, security problems, scope creep and violations of company rules; only report findings it can point to in the diff; classify severity honestly; approve when no blocker or major finding remains.
 - **Output `review.json`:**
 
@@ -123,12 +124,14 @@ For New project orders, `newProject` holds `{ "name", "visibility", "language", 
       "suggestedFix": "Format with toUTCString()"
     }
   ],
-  "summary": "One major issue in date formatting"
+  "summary": "One major issue in date formatting",
+  "injectionNoticed": false
 }
 ```
 
-- The script posts the review to the pull request as a review comment and passes blocker and major findings to the next Soldier round.
-- **Failure modes:** findings without file references, a `verdict` that contradicts the findings (approve with a blocker). Both are validation failures.
+- The `judge` job posts the review to the pull request as a comment-type review on the head commit, after checking that the head is still the commit the Knight reviewed (if someone else pushed to the task branch meanwhile, the order fails at step "review" and nothing is posted). The review body ends with a machine block (`<!-- shadowarmy:review {...} -->`) from which the next fix round reads the findings; blocker and major findings go to the Soldier, minor findings are listed in the pull request body when the change is approved.
+- `injectionNoticed` (boolean) is required, as for the Soldier. `line` is `null` for a whole-file finding; `suggestedFix` may be empty.
+- **Failure modes:** findings without file references, or a `verdict` that contradicts the findings (approval with a blocker or major finding, or changes requested with only minor findings). Both are validation failures.
 
 ## Scout
 

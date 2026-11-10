@@ -12,9 +12,20 @@ export interface FakeComment {
 export interface FakeIssue {
   labels: string[];
   comments: FakeComment[];
+  title?: string;
+  body?: string;
+}
+
+export interface FakeReview {
+  id: number;
+  user: { login: string };
+  body: string;
+  commit_id: string;
+  event: string;
 }
 
 export interface FakeJob {
+  id?: number;
   name: string;
   status: string;
   conclusion: string | null;
@@ -34,9 +45,23 @@ export interface FakePull {
 
 export class FakeGitHub implements GitHubClient {
   issues = new Map<string, FakeIssue>();
-  runs: { id: number; created_at: string; jobs: FakeJob[] }[] = [];
+  runs: { id: number; created_at: string; head_sha?: string; jobs: FakeJob[] }[] = [];
+  /** Answer 403 to check-run listings, as GitHub may for fine-grained tokens. */
+  checkRunsForbidden = false;
   repos = new Map<string, { private: boolean }>();
   pulls = new Map<string, FakePull[]>();
+  /** Reviews per `owner/repo#pr`. */
+  reviews = new Map<string, FakeReview[]>();
+  /** Check runs and commit statuses per commit SHA (GitHub's JSON shapes). */
+  checkRuns = new Map<string, unknown[]>();
+  statuses = new Map<string, unknown[]>();
+  /** Job logs by job id. */
+  logs = new Map<number, string>();
+  dispatches: { path: string; body: unknown }[] = [];
+  /** The account behind the token (GET /user); reviews are posted as this login. */
+  login = "the-monarch";
+  /** Resolves a branch head for GET /pulls/{n}; tests point it at a real bare repository. */
+  branchSha: (repo: string, branch: string) => string = () => "0".repeat(40);
   calls: string[] = [];
   private nextId = 1000;
 
@@ -53,6 +78,14 @@ export class FakeGitHub implements GitHubClient {
   request<T>(method: string, path: string, body?: unknown): Promise<T> {
     this.calls.push(`${method} ${path}`);
     return Promise.resolve(this.route(method, path, body) as T);
+  }
+
+  requestText(path: string): Promise<string> {
+    this.calls.push(`GET(text) ${path}`);
+    const m = /^\/repos\/[^/]+\/[^/]+\/actions\/jobs\/(\d+)\/logs$/.exec(path);
+    const log = m === null ? undefined : this.logs.get(Number(m[1]));
+    if (log === undefined) return Promise.reject(new GitHubError("GET", path, 404, "Not Found"));
+    return Promise.resolve(log);
   }
 
   paginate<T>(path: string): Promise<T[]> {
@@ -96,6 +129,8 @@ export class FakeGitHub implements GitHubClient {
       throw new GitHubError(method, path, 404, "Not Found");
     }
     if ((m = /^\/repos\/([^/]+\/[^/]+)\/actions\/runs$/.exec(pathname)) && method === "GET") {
+      const headSha = params.get("head_sha");
+      if (headSha !== null) return { workflow_runs: this.runs.filter((run) => run.head_sha === headSha).map((run) => ({ id: run.id })) };
       const since = (params.get("created") ?? ">=1970-01-01T00:00:00Z").slice(2);
       return { workflow_runs: this.runs.filter((run) => run.created_at >= since).map((run) => ({ id: run.id })) };
     }
@@ -117,6 +152,39 @@ export class FakeGitHub implements GitHubClient {
         return pull;
       }
     }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(pathname)) && method === "GET") {
+      const repo = decodeURIComponent(m[1] ?? "");
+      const pull = (this.pulls.get(repo) ?? []).find((p) => p.number === Number(m?.[2]));
+      if (pull === undefined) throw new GitHubError(method, path, 404, "Not Found");
+      return { ...pull, head: { ref: pull.head, sha: this.branchSha(repo, pull.head) } };
+    }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/reviews$/.exec(pathname))) {
+      const key = `${decodeURIComponent(m[1] ?? "")}#${m[2] ?? ""}`;
+      const list = this.reviews.get(key) ?? [];
+      if (method === "GET") return list;
+      if (method === "POST") {
+        const b = body as { body: string; commit_id: string; event: string };
+        const review: FakeReview = { id: this.nextId++, user: { login: this.login }, ...b };
+        this.reviews.set(key, [...list, review]);
+        return review;
+      }
+    }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/commits\/([0-9a-f]{40})\/check-runs$/.exec(pathname)) && method === "GET") {
+      if (this.checkRunsForbidden) throw new GitHubError(method, path, 403, "Resource not accessible by personal access token");
+      return { total_count: 0, check_runs: this.checkRuns.get(m[2] ?? "") ?? [] };
+    }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/commits\/([0-9a-f]{40})\/status$/.exec(pathname)) && method === "GET") {
+      return { state: "pending", statuses: this.statuses.get(m[2] ?? "") ?? [] };
+    }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/actions\/workflows\/([^/]+)\/dispatches$/.exec(pathname)) && method === "POST") {
+      this.dispatches.push({ path: pathname, body });
+      return undefined;
+    }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(pathname)) && method === "GET") {
+      const issue = this.issue(decodeURIComponent(m[1] ?? ""), Number(m[2]));
+      return { number: Number(m[2]), title: issue.title ?? "Untitled", body: issue.body ?? "", labels: issue.labels.map((name) => ({ name })) };
+    }
+    if (pathname === "/user" && method === "GET") return { login: this.login };
     if ((m = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(pathname)) && method === "PATCH") {
       const pull = (this.pulls.get(decodeURIComponent(m[1] ?? "")) ?? []).find((p) => p.number === Number(m?.[2]));
       if (pull === undefined) throw new GitHubError(method, path, 404, "Not Found");

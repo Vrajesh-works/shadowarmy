@@ -1,8 +1,8 @@
 # shadowarmy Behavior Contract
 
-Updated November 8, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
+Updated November 9, 2026. This specification records the agreed product rules, implementation boundaries and regression requirements. Each section states its status. When a rule is implemented, mark it implemented and name the tests that cover it.
 
-Milestone 0 added the deterministic building blocks for sections 4 and 5. Milestone 1 added the single-task order workflow (`.github/workflows/order.yml`, `src/order/`), which uses them. "End to end: pending" marks a rule whose implementation has not yet been proven by a recorded run on the sandbox Realm; recorded runs are linked (the sandbox Realm is private, so the links work only for its owner).
+Milestone 0 added the deterministic building blocks for sections 4 and 5. Milestone 1 added the single-task order workflow (`.github/workflows/order.yml`, `src/order/`), which uses them. Milestone 2 added the Knight, fix rounds and the target CI wait. "End to end: pending" marks a rule whose implementation has not yet been proven by a recorded run on the sandbox Realm; recorded runs are linked (the sandbox Realm is private, so the links work only for its owner).
 
 Read [the root instructions](../AGENTS.md) before editing. Implementation work does not authorize changing a rule here. Resolve contradictions or missing decisions explicitly, record them in [decisions](decisions.md) and update affected docs and diagrams in the same pull request.
 
@@ -72,7 +72,7 @@ arise -> queued | planning | in-progress
 queued -> planning | in-progress
 planning -> needs-decision (plan posted) | in-progress | queued (single-task plan dispatched without approval) | failed
 needs-decision -> planning (after /answer to a Marshal question) | in-progress | queued (after /approve or /answer) | dismissed
-in-progress -> in-review | ready-to-merge (milestone 1 only, before the Knight exists; milestone 2 removes it) | needs-decision (Soldier blocked) | failed
+in-progress -> in-review | needs-decision (Soldier blocked) | failed
 in-review -> in-progress (fix round) | waiting-ci | ready-to-merge | needs-decision (fix rounds used up) | failed
 waiting-ci -> in-review (CI failed, fix round) | ready-to-merge | needs-decision (CI wait limit)
 ready-to-merge -> done (merged) | in-review (Monarch requested changes on the PR) | dismissed (PR closed unmerged)
@@ -91,7 +91,7 @@ Agreed November 8, 2026. Implemented in milestone 0 and used by the order workfl
 
 - Each order and task has exactly one status comment, written by the engine and edited in place. It starts with `<!-- shadowarmy:status -->`.
 - It ends with a machine block `<!-- shadowarmy:state {JSON} -->`. The JSON is validated against a schema on every read; an unreadable block is reported as `failed` with the reason, never guessed.
-- State JSON fields (version 1), all required, `null` where not applicable: `version` (1), `kind` (`order`, `task`, `new-project`), `target` (`owner/repo`; null for a New project before its repository exists), `base` (branch; null means the default branch), `branch` (`shadowarmy/<issue>-<slug>`), `pr` (number), `round` (fix rounds used), `runs` (at most 200 entries of `{role, runId, conclusion}`; `conclusion` is a GitHub run conclusion or null while running), `ciWaitStartedAt` (ISO 8601 UTC with `Z`), `lastError` (at most 4000 characters), `parent` (order issue of a task), `dependsOn` (task issue numbers). Unknown fields are rejected.
+- State JSON fields (version 1), all required, `null` where not applicable: `version` (1), `kind` (`order`, `task`, `new-project`), `target` (`owner/repo`; null for a New project before its repository exists), `base` (branch; null means the default branch), `baseSha` (the commit the first round started from, [decision 32](decisions.md)), `branch` (`shadowarmy/<issue>-<slug>`), `pr` (number), `round` (fix rounds used), `runs` (at most 200 entries of `{role, runId, conclusion}`; `conclusion` is a GitHub run conclusion or null while running), `ciWaitStartedAt` (ISO 8601 UTC with `Z`), `lastError` (at most 4000 characters), `parent` (order issue of a task), `dependsOn` (task issue numbers). Unknown fields are rejected.
 - The state block is one line, the last line of the comment. `<`, `>` and `&` inside it are written as JSON `\u` escapes so no value can end the HTML comment early.
 - Text in the human-readable part that may come from issues or agents is escaped: HTML special characters become entities, newlines in one-line fields collapse to spaces, `@mentions` are broken with a zero-width space, and long text is truncated. Links must be `https` URLs of at most 1000 characters.
 - The whole comment stays within GitHub's 65536-character limit, measured after escaping. The state block, the summary and the links always fit; the rest of the budget goes to the question, then to the details. When the text does not fit, details are dropped from the end (with a "... N more not shown" line) and then the question is truncated.
@@ -104,6 +104,7 @@ Agreed November 8, 2026. The `arise` trigger and its actor check are implemented
 
 - The Monarch is the login in `monarch:` in `shadowarmy.yml`, defaulting to the Realm owner. Triggers and commands from any other account are ignored and logged in the run summary, never acted on.
 - Labels: adding `arise` starts an order. Only label events whose `sender` is the Monarch count.
+- Fix rounds are dispatched runs (`workflow_dispatch` with the issue number). A dispatch does work only when its sender is the engine (`github-actions[bot]`) and the order is `in-progress` waiting for a fix round ([decision 36](decisions.md)); any other dispatch, including one by the Monarch, changes nothing (end to end: [a Monarch dispatch was skipped](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737840871)).
 - Comment commands on an order or task issue, one per comment, at the start of a line:
   - `/approve`: approve the posted plan (or the pending repository creation for a New project).
   - `/answer <text>`: answer the question in `needs-decision`. The text is passed to the next agent run as Monarch input. It is read from the comment itself when that run is assembled, not stored in the state block.
@@ -139,10 +140,10 @@ Agreed November 8, 2026. See [roles](roles.md#soldier) for the prompt contract. 
 
 ## 9. Knight Review And Fix Rounds
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Implemented in milestone 2 (`src/order/judge.ts`, `src/knightReview.ts`, `src/feedback.ts`, `roles/knight.md`; `tests/rounds.test.ts`, `tests/knightReview.test.ts`; end to end: [seeded bug found by the Knight](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42724822272) and [fixed in round 1](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42725069956), [round limit reached](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737495292); the review-head-moved path is unit-tested only). How the loop runs: each round is one workflow run (gate, soldier, deliver, knight, judge); the judge starts a fix round by dispatching a new run, whose gate rebuilds the feedback from the posted review and the failing checks ([decision 30](decisions.md)). The Knight runs in its own job with only the Claude credential, and a review counts only when it carries a valid review block, was posted by the engine's account and reviews the pull request's head commit ([decision 31](decisions.md)). The Knight reviews before the CI wait, so it gets no CI results ([decision 37](decisions.md)).
 
 - Every pull request is reviewed by a Knight before it can reach `ready-to-merge`. The Knight runs in a separate agent session that never saw the Soldier's conversation.
-- Inputs: order and task text, company rules, project notes, the full diff, the Soldier's `result.json`, CI results when available.
+- Inputs: order and task text, company rules, project notes, the full diff and the Soldier's `result.json`. The Knight reviews before the CI wait and receives no CI results.
 - Output: `review.json` with `verdict` (`approve`, `changes`), `findings` (severity `blocker`, `major`, `minor`; file; line; problem; suggested fix) and `scope` (`ok` or a note when the diff does more or less than asked).
 - `changes` starts a fix round: a new Soldier run on the same branch with the findings. Only `blocker` and `major` findings require a fix round; `minor` findings are listed in the pull request body.
 - The Knight posts its review as a pull request review in the target repository (comment type, never "approve" in GitHub's sense, so it never satisfies branch protection on its own).
@@ -150,12 +151,12 @@ Agreed November 8, 2026.
 
 ## 10. Target Repository CI
 
-Agreed November 8, 2026.
+Agreed November 8, 2026. Implemented in milestone 2 (`src/ci.ts`; `tests/ci.test.ts`, `tests/rounds.test.ts`; end to end: [Knight approved, target CI failed](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726043544), [fix round from the failing checks, CI green](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726288746); the pending-at-the-limit path is unit-tested only), with these milestone 2 rules ([decision 33](decisions.md)): every completed check that did not pass counts as failing; no check within 2 minutes means no CI; until the Sentinel exists the judge waits in its job for up to `ci.max_wait_minutes` (at most 300 minutes), then moves to `needs-decision` instead of `waiting-ci`.
 
-- After each push, the engine waits for the pull request's checks inside the job for up to `ci.wait_minutes_in_job` (default 15).
-- Still pending: the task moves to `waiting-ci` and the job ends. The Sentinel checks again on each patrol until `ci.max_wait_minutes` (default 120), then moves to `needs-decision`.
-- Failing required checks start a fix round with the failing check names and a log excerpt (last `ci.log_excerpt_lines` lines, default 200, secrets masked by GitHub).
-- A target repository without CI is allowed. The status comment states "no CI in target repository; verification is the Soldier's and Scout's reported checks only".
+- In milestone 2, the judge waits inside the job for up to `ci.max_wait_minutes` (default 120, capped at 300), then moves to `needs-decision` if checks are still pending.
+- Still pending for milestone 3: after `ci.wait_minutes_in_job` (default 15), the task moves to `waiting-ci` and the job ends. The Sentinel checks again on each patrol until `ci.max_wait_minutes`, then moves to `needs-decision`.
+- Failing checks start a fix round with the failing check names and a log excerpt (last `ci.log_excerpt_lines` lines, default 200, secrets masked by GitHub).
+- A target repository without CI is allowed. The status comment states that verification is the Soldier's reported checks only (and the Scout's once that role exists).
 
 ## 11. Failure, Retry And Recovery
 
@@ -206,7 +207,7 @@ Agreed November 8, 2026. Arrives in milestone 5.
 
 ## 16. Limits And Cost
 
-Agreed November 8, 2026. Milestone 1 enforces `max_turns`, `run_timeout_minutes` (the soldier job's timeout) and the daily cap (`src/limits.ts`, counted from the Realm's own run history, [decision 28](decisions.md)); reaching the cap moves the order to `queued` (end to end: every recorded run counted the day's agent runs and ran within the limits, for example [this run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42652430753); the cap itself (`queued`) has not been reached on the sandbox and is unit-tested only).
+Agreed November 8, 2026. Milestone 1 enforces `max_turns`, `run_timeout_minutes` (the soldier job's timeout) and the daily cap (`src/limits.ts`, counted from the Realm's own run history, [decision 28](decisions.md)); reaching the cap moves the order to `queued` (end to end: every recorded run counted the day's agent runs and ran within the limits, for example [this run](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42652430753); [cap reached, order `queued`](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42726679108), [re-adding `arise` started it](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737284722)).
 
 - Required limits with defaults: `max_turns` 150, `run_timeout_minutes` 45, `max_fix_rounds` 3, `max_concurrent_soldiers` 3, `max_runs_per_day` 30, `ci.max_wait_minutes` 120.
 - A run is any workflow job that starts an agent. The daily count resets at 00:00 in `timezone` (default UTC).
@@ -234,6 +235,6 @@ When implemented, each of these needs an automated test (unit or end-to-end) nam
 - Issue text containing shell metacharacters and `${{ }}` sequences never executes. Unit: `tests/issueForm.test.ts` ("keeps shell metacharacters, expressions and fake markers as inert data"); workflow lint: `scripts/check-workflow-expressions.ts` fails CI on any `${{ }}` inside a `run:` script (`tests/workflowExpressions.test.ts`). End to end: [an order whose title and task contain `$(...)`, backticks, `${{{{ secrets... }}}}` and a fake state marker](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42659729393) was handled as data (milestone 1).
 - An unparsable agent result file produces `failed`, not `done`. Unit: `tests/soldierResult.test.ts`, `tests/order.test.ts` ("fails on an unparsable or missing result"). End to end: [fake agent writing invalid JSON](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42659729393) ended in `failed`.
 - `/retry` after a failure with an existing pull request reuses the branch.
-- Fix rounds stop at the limit and produce `needs-decision`.
+- Fix rounds stop at the limit and produce `needs-decision`. Unit: `tests/rounds.test.ts` ("hands the order to the Monarch with the remaining findings when the rounds are used up"). End to end: [with `max_fix_rounds: 1`, the fix round ended in `needs-decision` listing both remaining blockers](https://github.com/Vrajesh-works/shadowarmy-sandbox-realm/actions/runs/42737495292).
 - The Sentinel turns a merged pull request into `done` and a closed one into `dismissed`.
 - No engine code path merges a target pull request.

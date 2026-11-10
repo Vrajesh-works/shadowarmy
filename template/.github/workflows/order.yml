@@ -1,21 +1,33 @@
 name: shadowarmy order
+# Fix rounds are dispatched runs; without this they would all be titled "shadowarmy order".
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Fix round for order #{0}', inputs.issue) || github.event.issue.title }}"
 
-# Thin caller: declares the trigger and permissions, then hands over to the
-# engine. The engine checks again that the sender is the Monarch.
+# Thin caller: declares the triggers and permissions, then hands over to the
+# engine. The engine checks again that the sender is the Monarch (or, for a
+# dispatched fix round, the engine itself).
 on:
   issues:
     types: [labeled]
+  # The engine dispatches each fix round of an order as a new run.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Order issue number
+        required: true
+        type: number
 
 permissions:
   contents: read
   issues: write
-  actions: read
+  # write: the engine dispatches fix rounds and reads today's runs for the daily cap.
+  actions: write
 
 jobs:
   order:
-    if: github.event.label.name == 'arise'
+    if: (github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]') || github.event.label.name == 'arise'
+    # Only runs that can do work join the group, so other labels and manual dispatches never cancel a pending order run.
     concurrency:
-      group: shadowarmy-${{ github.event.issue.number }}
+      group: shadowarmy-${{ github.event.issue.number || inputs.issue }}
       cancel-in-progress: false
     uses: Vrajesh-works/shadowarmy/.github/workflows/order.yml@main
     secrets: inherit

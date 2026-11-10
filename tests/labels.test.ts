@@ -78,7 +78,7 @@ describe("transition table", () => {
   });
 
   it("covers the designed paths of later milestones", () => {
-    assert.ok(canTransition("in-progress", "ready-to-merge"), "milestone 1 has no Knight");
+    assert.ok(!canTransition("in-progress", "ready-to-merge"), "since milestone 2 nothing reaches ready-to-merge without the Knight");
     assert.ok(canTransition("planning", "in-progress"), "single-task plan dispatched without approval");
     assert.ok(canTransition("planning", "queued"), "single-task plan dispatched without capacity");
     assert.ok(canTransition("failed", "planning"), "/retry after the Marshal failed");

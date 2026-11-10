@@ -27,7 +27,7 @@ Edit `shadowarmy.yml`:
 
 Edit `rules/company.md` with your standing engineering rules, and optionally add `projects/<owner>__<repo>.md` notes per target. See [configuration](configuration.md) for every key and its limits.
 
-`.github/workflows/order.yml` calls the engine at `@main` until the first release; from milestone 5 it pins the `v1` tag.
+`.github/workflows/order.yml` calls the engine at `@main` until the first release; from milestone 5 it pins the `v1` tag. A Realm set up before milestone 2 must copy the current `template/.github/workflows/order.yml` again: with the old caller, which lacks the `workflow_dispatch` trigger and `actions: write`, GitHub rejects every run at startup, so no order runs at all until the caller file is replaced.
 
 ## 3. Create The Labels
 
@@ -50,7 +50,7 @@ gh label create new-project    --color ededed --description "New project order"
 
 ## 4. Add The Secrets
 
-**GitHub token.** Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) limited to your target repositories (not the Realm), with Contents: read and write, Pull requests: read and write, and Metadata: read. Store it without printing it:
+**GitHub token.** Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) limited to your target repositories (not the Realm), with Contents: read and write, Pull requests: read and write, Commit statuses: read, Actions: read and Metadata: read (the last three let the engine wait for the target's CI and read failing logs). Store it without printing it:
 
 ```sh
 gh secret set SHADOWARMY_GH_TOKEN
@@ -71,11 +71,11 @@ or a pay-per-use API key: `gh secret set ANTHROPIC_API_KEY`. Use a credential de
 
 1. Open a new issue with the **Order** form: the target repository and the task.
 2. Add the `arise` label.
-3. Watch the issue: the label moves to `in-progress`, then `ready-to-merge` with a link to the pull request, or `failed` / `needs-decision` with the reason. The status comment links the workflow run.
+3. Watch the issue: the label moves through `in-progress` and `in-review`, then to `ready-to-merge` with a link to the pull request, or `failed` / `needs-decision` with the reason. The status comment links the workflow run.
 4. Review the pull request in the target repository and merge it yourself.
 
 Only the Monarch's `arise` counts. Labels added by anyone else are ignored and leave the issue unchanged.
 
 ## Test Mode
 
-A test Realm can replace the Soldier with a canned script by setting the repository variable `SHADOWARMY_FAKE_AGENT` to one of `add-file`, `edit-claude-md`, `no-changes`, `blocked` or `invalid-result` (see `scripts/fake-agent.sh` in the engine). Everything else (validation, diff guard, push, pull request, labels) runs for real. Leave it unset in a real Realm.
+A test Realm can replace the Soldier with a canned script by setting the repository variable `SHADOWARMY_FAKE_AGENT`; see [Variables](configuration.md#variables-realm-repository-variables) for the supported scenarios and their behavior. Leave it unset in a real Realm.

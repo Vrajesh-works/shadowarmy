@@ -20,6 +20,8 @@ export interface GitHubClient {
   request<T>(method: string, path: string, body?: unknown): Promise<T>;
   /** Follow `Link: rel="next"` pages of a list endpoint, up to `maxPages`. */
   paginate<T>(path: string, maxPages?: number): Promise<T[]>;
+  /** GET a plain-text resource (for example job logs, which redirect to a download URL). */
+  requestText(path: string): Promise<string>;
 }
 
 export interface ClientOptions {
@@ -87,6 +89,12 @@ export function createClient(options: ClientOptions): GitHubClient {
   return {
     async request<T>(method: string, path: string, body?: unknown): Promise<T> {
       return parse<T>(method, path, await send(method, `${apiUrl}${path}`, body));
+    },
+    async requestText(path: string): Promise<string> {
+      const response = await send("GET", `${apiUrl}${path}`, undefined);
+      const text = await response.text();
+      if (!response.ok) throw new GitHubError("GET", path, response.status, text.slice(0, 500));
+      return text;
     },
     async paginate<T>(path: string, maxPages = 10): Promise<T[]> {
       const items: T[] = [];
